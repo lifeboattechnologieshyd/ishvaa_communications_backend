@@ -1,0 +1,69 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: ishvaa-communications-postgres
+    restart: unless-stopped
+
+    env_file:
+      - ../../.env.docker
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      PGSSLMODE: ${PGSSLMODE:-disable}
+
+    ports:
+      - "${POSTGRES_PORT_HOST:-5435}:5432"
+
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+    networks:
+      - ishvaa-communications-network
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    image: ishvaa-communications-backend:latest
+
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+      tags:
+        - ishvaa-communications-backend:latest
+
+    container_name: ishvaa-communications-backend
+    restart: unless-stopped
+
+    env_file:
+      - ../../.env
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    ports:
+      - "${HTTP_PORT:-8014}:8000"
+
+    networks:
+      - ishvaa-communications-network
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "print('healthy')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pg_data:
+    external: true
+    name: ishvaa_communications_pg_data
+
+networks:
+  ishvaa-communications-network:
+    external: true

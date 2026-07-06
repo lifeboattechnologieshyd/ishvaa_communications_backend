@@ -1,3 +1,5 @@
 #!/bin/sh
-echo "Pre-stop hook"
+
+echo "Stopping Ishvaa Communications backend..."
+
 exit 0
