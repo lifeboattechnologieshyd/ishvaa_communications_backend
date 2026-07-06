@@ -1,0 +1,59 @@
+# Python Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Django Stuff
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.sqlite3-journal
+
+# Version control
+.git/
+
+# Environment Variables
+.env
+env/
+.env.bak/
+
+# Virtual Environments
+venv/
+.venv/
+
+# Static and Media Files
+# staticfiles/
+# media/
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+
+# OS Generated Files
+.DS_Store
+Thumbs.db
+
+# Tests and Coverage Reports
+htmlcov/
+.tox/
+.coverage
+coverage.xml
+.cache/
+.pytest_cache/
+
+logs/
+
+cat >> .gitignore << 'EOF'
+
+# Secrets and credentials
+
+.env.docker
+config/*-firebase.json
+config/*service-account*.json
+*.pem
+EOF
