@@ -16,11 +16,6 @@ SECRET_KEY = os.getenv(
     "SECRET_KEY",
     "django-insecure-local-dev-key"
 )
-
-DEBUG = False
-
-ALLOWED_HOSTS = []
-
 #################################
 #       PROJECT ROOT DIR        #
 #################################
@@ -225,7 +220,9 @@ REST_FRAMEWORK = {
 #       JWT AUTH SETTINGS       #
 #################################
 AUTH_USER_MODEL = "db.UserMaster"
-
+AUTHENTICATION_BACKENDS = [
+    "user.authentication.EmailAuthenticationBackend",
+]
 SIMPLE_JWT = {
     "BLACKLIST_DB_ALIAS": "default",
     "ACCESS_TOKEN_LIFETIME": timedelta(days=float(os.getenv("ACCESS_TOKEN_LIFETIME_IN_MINUTES", 1))),
@@ -257,6 +254,7 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     *default_headers,
     "x-request-id",
+    'X-API-KEY'
 ]
 CORS_EXPOSE_HEADERS = [
     "x-request-id",
@@ -270,8 +268,6 @@ DJANGO_STRUCTLOG_STATUS_4XX_LOG_LEVEL = logging.INFO
 DJANGO_STRUCTLOG_USER_ID_FIELD = "id"
 
 DEBUG = True
-
-
 
 CRONJOBS = [
 
