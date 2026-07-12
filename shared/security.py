@@ -2,7 +2,7 @@ import hashlib
 import secrets
 
 class Security:
-    API_KEY_PREFIX = "sk_live_"
+    API_KEY_PREFIX = "ics_live_"
     @staticmethod
     def generate_api_key():
         return f"{Security.API_KEY_PREFIX}{secrets.token_urlsafe(32)}"
