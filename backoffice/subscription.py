@@ -1,6 +1,7 @@
 from rest_framework.views import APIView
 
-from db.models.subscription import SubscriptionPlan, PlanFeature
+from db.models import Organization
+from db.models.subscription import SubscriptionPlan, PlanFeature, OrganizationSubscription, SubscriptionStatus
 from shared.utils import CustomResponse
 
 
@@ -144,4 +145,94 @@ class PlanFeatureAPIView(APIView):
         return CustomResponse().successResponse(
             data=list(features),
             description="Plan features fetched successfully."
+        )
+
+
+class OrganizationSubscriptionAPIView(APIView):
+
+    def post(self, request):
+        data = request.data
+
+        required_fields = [
+            "organization_id",
+            "plan_id",
+        ]
+
+        for field in required_fields:
+            if data.get(field) in [None, ""]:
+                return CustomResponse().errorResponse(
+                    data={},
+                    description=f"{field.replace('_', ' ').title()} is required."
+                )
+
+        try:
+            organization = Organization.objects.get(
+                id=data.get("organization_id")
+            )
+
+            plan = SubscriptionPlan.objects.get(
+                id=data.get("plan_id"),
+                is_active=True
+            )
+
+            subscription = OrganizationSubscription.objects.create(
+                organization=organization,
+                plan=plan,
+                status=SubscriptionStatus.PENDING,
+                auto_renew=data.get("auto_renew", True),
+            )
+
+            return CustomResponse().successResponse(
+                data={
+                    "id": str(subscription.id)
+                },
+                description="Subscription created successfully."
+            )
+
+        except Organization.DoesNotExist:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Organization not found."
+            )
+
+        except SubscriptionPlan.DoesNotExist:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Subscription plan not found."
+            )
+
+        except Exception as error:
+            return CustomResponse().errorResponse(
+                data={},
+                description=str(error)
+            )
+
+    def get(self, request):
+
+        organization_id = request.query_params.get("organization_id")
+
+        subscriptions = OrganizationSubscription.objects.filter(
+            organization_id=organization_id
+        ).select_related(
+            "organization",
+            "plan"
+        )
+
+        data = []
+
+        for subscription in subscriptions:
+            data.append({
+                "id": str(subscription.id),
+                "organization": subscription.organization.name,
+                "plan": subscription.plan.name,
+                "status": subscription.status,
+                "auto_renew": subscription.auto_renew,
+                "starts_at": subscription.starts_at,
+                "expires_at": subscription.expires_at,
+                "next_billing_at": subscription.next_billing_at,
+            })
+
+        return CustomResponse().successResponse(
+            data=data,
+            description="Subscriptions fetched successfully."
         )

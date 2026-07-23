@@ -32,7 +32,7 @@ psycopg[binary]>=3.2,<4.0
 django-health-check==3.18.*
 
 # Utilities
-requests>=2.32.0
+requests==2.31.0
 # crum
 django-crum==0.7.9
 
@@ -46,6 +46,9 @@ firebase-admin==6.9.0
 
 # crons
 django-crontab==0.7.*
+
+# phone pe
+phonepe-pg-sdk-python==2.3.0
 
 # Observability
 opentelemetry-api==1.31.*
