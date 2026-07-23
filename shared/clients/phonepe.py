@@ -109,6 +109,9 @@ def create_upi_collect_mandate(
 ):
     print("merchant_order_id:", merchant_order_id)
     print("merchant_subscription_id:", merchant_subscription_id)
+    print("Client ID:", client_id)
+    print("Client Version:", client_version)
+    print("Environment:", env)
     client = get_subscription_client()
 
     setup_request = PgPaymentRequest.build_subscription_setup_upi_collect(
@@ -117,9 +120,9 @@ def create_upi_collect_mandate(
         amount=amount,
         auth_workflow_type=AuthWorkflowType.TRANSACTION,
         subscription_expire_at=int(time.time() * 1000) + 1000000,
-        amount_type=AmountType.FIXED,
+        amount_type=AmountType.VARIABLE,
         frequency=Frequency.ON_DEMAND,
-        order_expire_at=int(time.time() * 1000) + 1000000,
+        order_expire_at=int((time.time() + 24 * 60 * 60) * 1000),
         max_amount=amount,
         vpa=vpa,
     )
