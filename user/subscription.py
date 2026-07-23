@@ -90,6 +90,9 @@ class SubscriptionPaymentAPIView(APIView):
             print("Amount (Paise):", amount_in_paise)
             print("VPA:", data.get("vpa"))
 
+            print(type(phonepe_response))
+            print(dir(phonepe_response))
+
             payment = SubscriptionPayment.objects.create(
                 subscription=subscription,
                 transaction_id=merchant_order_id,  #  save the ID that actually succeeded
