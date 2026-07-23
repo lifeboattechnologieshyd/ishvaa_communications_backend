@@ -118,48 +118,24 @@ def create_upi_collect_mandate(
     amount,
     vpa,
 ):
-    MAX_RETRIES = 3
+    client = get_subscription_client()
 
-    for attempt in range(1, MAX_RETRIES + 1):
-        #  Fresh order ID on every attempt
-        current_order_id = f"{merchant_order_id}-{attempt}" if attempt > 1 else merchant_order_id
+    setup_request = PgPaymentRequest.build_subscription_setup_upi_collect(
+        merchant_order_id=merchant_order_id,
+        merchant_subscription_id=merchant_subscription_id,
+        amount=amount,
+        auth_workflow_type=AuthWorkflowType.TRANSACTION,
+        subscription_expire_at=int(time.time() * 1000) + 1000000,
+        amount_type=AmountType.VARIABLE,
+        frequency=Frequency.ON_DEMAND,
+        order_expire_at=int((time.time() + 24 * 60 * 60) * 1000),
+        max_amount=amount,
+        vpa=vpa,
+    )
 
-        print(f"Attempt {attempt} | merchant_order_id: {current_order_id}")
+    print("Merchant Order ID:", merchant_order_id)
 
-        try:
-            client = get_subscription_client()
-
-            setup_request = PgPaymentRequest.build_subscription_setup_upi_collect(
-                merchant_order_id=current_order_id,
-                merchant_subscription_id=merchant_subscription_id,
-                amount=amount,
-                auth_workflow_type=AuthWorkflowType.TRANSACTION,
-                subscription_expire_at=int(time.time() * 1000) + 1000000,
-                amount_type=AmountType.VARIABLE,
-                frequency=Frequency.ON_DEMAND,
-                order_expire_at=int((time.time() + 24 * 60 * 60) * 1000),
-                max_amount=amount,
-                vpa=vpa,
-            )
-
-            result = client.setup(setup_request)
-            print("Success on attempt:", attempt)
-            return current_order_id, result  # return whichever ID succeeded
-
-        except Exception as e:
-            error_str = str(e)
-            print(f"Attempt {attempt} failed: {error_str}")
-
-            # Don't retry on duplicate or client errors
-            if "DUPLICATE_TXN_REQUEST" in error_str or "400" in error_str:
-                raise
-
-            if attempt == MAX_RETRIES:
-                raise
-
-            time.sleep(1)
-
-
+    return client.setup(setup_request)
 def validate_phonepe_webhook(auth_header, raw_body):
     client = get_subscription_client()
 
