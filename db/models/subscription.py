@@ -36,6 +36,7 @@ class SubscriptionStatus(models.TextChoices):
     CANCELLED = "CANCELLED", "Cancelled"
     EXPIRED = "EXPIRED", "Expired"
     PAUSED = "PAUSED", "Paused"
+    FAILED = "FAILED", "Failed"
 
 
 class OrganizationSubscription(AuditModel):
