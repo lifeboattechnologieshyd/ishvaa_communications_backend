@@ -2,7 +2,6 @@ import time
 import uuid
 
 from phonepe.sdk.pg.common.exceptions import ServerError, BadRequest
-import phonepe_response
 from django.conf import settings
 from phonepe.sdk.pg.common.models.request.meta_info import MetaInfo
 from phonepe.sdk.pg.common.models.request.pg_payment_request import PgPaymentRequest
