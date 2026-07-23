@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from db.models import OrganizationSubscription, Organization, OrganizationStatus
 from db.models.subscription import SubscriptionPayment, PaymentStatus, SubscriptionStatus, SubscriptionPlan
 from shared.clients.phonepe import phone_pe_initiate, create_upi_intent_mandate, create_upi_collect_mandate, \
-    validate_phonepe_webhook, create_upi_collect_mandate_with_retry
+    validate_phonepe_webhook
 from shared.utils import CustomResponse
 
 
