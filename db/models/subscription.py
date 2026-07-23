@@ -51,6 +51,13 @@ class OrganizationSubscription(AuditModel):
         on_delete=models.PROTECT,
         related_name="subscriptions",
     )
+    merchant_subscription_id = models.CharField(
+        max_length=150,
+        unique=True,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
 
     status = models.CharField(
         max_length=20,
@@ -148,6 +155,12 @@ class SubscriptionPayment(AuditModel):
     transaction_id = models.CharField(
         max_length=150,
         unique=True,
+    )
+    merchant_subscription_id = models.CharField(
+        max_length=150,
+        null=True,
+        blank=True,
+        db_index=True,
     )
 
     phonepe_transaction_id = models.CharField(

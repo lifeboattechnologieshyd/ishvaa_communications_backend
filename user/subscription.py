@@ -49,16 +49,19 @@ class SubscriptionPaymentAPIView(APIView):
             print("Plan Amount:", plan.amount)
             print("Plan Amount Type:", type(plan.amount))
 
+            merchant_order_id = str(uuid.uuid4())
+            merchant_subscription_id = str(uuid.uuid4())
+
             print("\nCreating Organization Subscription...")
             subscription = OrganizationSubscription.objects.create(
                 organization=organization,
                 plan=plan,
                 status=SubscriptionStatus.PENDING,
+                merchant_subscription_id=merchant_subscription_id,
             )
             print("Subscription Created:", subscription.id)
 
-            merchant_order_id = str(uuid.uuid4())
-            merchant_subscription_id = str(uuid.uuid4())
+
 
             print("\nGenerated IDs")
             print("Merchant Order ID:", merchant_order_id)
@@ -67,6 +70,7 @@ class SubscriptionPaymentAPIView(APIView):
             print("\nCreating Subscription Payment...")
             payment = SubscriptionPayment.objects.create(
                 subscription=subscription,
+                merchant_subscription_id=merchant_subscription_id,
                 transaction_id=merchant_order_id,
                 amount=plan.amount,
                 status=PaymentStatus.PENDING,
@@ -91,6 +95,9 @@ class SubscriptionPaymentAPIView(APIView):
                 amount=amount_in_paise,
                 vpa=data.get("vpa"),
             )
+            payment.response = phonepe_response
+            payment.status = PaymentStatus.PENDING  # pending user action now
+            payment.save()
 
             print("\nPhonePe Response:")
             print(phonepe_response)
