@@ -1,6 +1,7 @@
 from django.db import models
 
 from db.models import Organization, AuditModel, ApiKey
+from db.models.subscription import OrganizationSubscription
 
 
 class EmailStatus(models.TextChoices):
@@ -61,3 +62,33 @@ class EmailLog(AuditModel):
 
     def __str__(self):
         return self.subject
+
+class EmailUsage(AuditModel):
+
+    organization = models.OneToOneField(
+        Organization,
+        on_delete=models.CASCADE,
+        related_name="email_usage"
+    )
+
+    subscription = models.ForeignKey(
+        OrganizationSubscription,
+        on_delete=models.CASCADE,
+        related_name="usage"
+    )
+
+    billing_cycle_start = models.DateField()
+
+    billing_cycle_end = models.DateField()
+
+    emails_sent = models.PositiveIntegerField(default=0)
+
+    recipients_sent = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        db_table = "email_usage"
+
+        indexes = [
+            models.Index(fields=["subscription"]),
+            models.Index(fields=["billing_cycle_end"]),
+        ]
