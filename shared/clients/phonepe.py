@@ -124,6 +124,21 @@ def create_upi_collect_mandate(
 
     return client.setup(setup_request)
 
+
+def validate_phonepe_webhook(auth_header, raw_body):
+    client = get_subscription_client()
+
+    callback_response = client.validate_callback(
+        username=settings.PHONEPE_WEBHOOK_USERNAME,
+        password=settings.PHONEPE_WEBHOOK_PASSWORD,
+        callback_header_data=auth_header,
+        callback_response_data=raw_body,
+    )
+
+    print("Callback Validation Response :", callback_response)
+
+    return callback_response
+
 def create_phonepe_subscription(subscription_id, amount):
     client = get_phonepe_client()
 

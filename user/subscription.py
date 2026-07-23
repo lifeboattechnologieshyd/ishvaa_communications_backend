@@ -4,9 +4,10 @@ from dateutil.relativedelta import relativedelta
 from django.utils import timezone
 from rest_framework.views import APIView
 
-from db.models import OrganizationSubscription, Organization
+from db.models import OrganizationSubscription, Organization, OrganizationStatus
 from db.models.subscription import SubscriptionPayment, PaymentStatus, SubscriptionStatus, SubscriptionPlan
-from shared.clients.phonepe import phone_pe_initiate, create_upi_intent_mandate, create_upi_collect_mandate
+from shared.clients.phonepe import phone_pe_initiate, create_upi_intent_mandate, create_upi_collect_mandate, \
+    validate_phonepe_webhook
 from shared.utils import CustomResponse
 
 
@@ -96,43 +97,82 @@ class PhonePeWebhookAPIView(APIView):
 
     def post(self, request):
         try:
+            print("========== PHONEPE WEBHOOK RECEIVED ==========")
+
+            auth_header = request.headers.get("Authorization")
+            raw_body = request.body.decode("utf-8")
+
+            print("Authorization Header :", auth_header)
+            print("Raw Body :", raw_body)
+
+            callback_response = validate_phonepe_webhook(
+                auth_header=auth_header,
+                raw_body=raw_body,
+            )
+
+            print("Webhook Validation Success")
+            print("Callback Response :", callback_response)
+
             payload = request.data
 
-            transaction_id = payload.get("merchantOrderId")
+            print("Payload :", payload)
+
+            merchant_order_id = payload.get("merchantOrderId")
             payment_status = payload.get("state")
             phonepe_transaction_id = payload.get("transactionId")
 
-            if not transaction_id:
-                return CustomResponse().errorResponse(
-                    data={},
-                    description="Transaction ID is required."
-                )
+            print("Merchant Order ID :", merchant_order_id)
+            print("Payment Status :", payment_status)
+            print("PhonePe Transaction ID :", phonepe_transaction_id)
 
             payment = SubscriptionPayment.objects.get(
-                transaction_id=transaction_id
+                transaction_id=merchant_order_id
             )
+
+            print("Payment Found :", payment.id)
 
             payment.phonepe_transaction_id = phonepe_transaction_id
             payment.response = payload
             payment.payment_date = timezone.now()
 
             if payment_status == "COMPLETED":
+
+                print("Payment Successful")
+
                 payment.status = PaymentStatus.SUCCESS
+                payment.save()
 
                 subscription = payment.subscription
+
                 subscription.status = SubscriptionStatus.ACTIVE
                 subscription.starts_at = timezone.now()
                 subscription.expires_at = timezone.now() + relativedelta(months=1)
                 subscription.next_billing_at = subscription.expires_at
                 subscription.save()
 
+                print("Subscription Activated")
+
+                organization = subscription.organization
+                organization.status = OrganizationStatus.ACTIVE
+                organization.save()
+
+                print("Organization Activated")
+
             elif payment_status == "FAILED":
+
+                print("Payment Failed")
+
                 payment.status = PaymentStatus.FAILED
+                payment.save()
 
             elif payment_status == "PENDING":
-                payment.status = PaymentStatus.PENDING
 
-            payment.save()
+                print("Payment Pending")
+
+                payment.status = PaymentStatus.PENDING
+                payment.save()
+
+            print("Webhook Processed Successfully")
 
             return CustomResponse().successResponse(
                 data={},
@@ -140,12 +180,18 @@ class PhonePeWebhookAPIView(APIView):
             )
 
         except SubscriptionPayment.DoesNotExist:
+
+            print("Subscription Payment Not Found")
+
             return CustomResponse().errorResponse(
                 data={},
-                description="Payment not found."
+                description="Subscription payment not found."
             )
 
         except Exception as error:
+
+            print("Webhook Error :", str(error))
+
             return CustomResponse().errorResponse(
                 data={},
                 description=str(error)
