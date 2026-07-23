@@ -104,6 +104,8 @@ class SubscriptionPaymentAPIView(APIView):
 
             print("\nPhonePe Response:")
             print(phonepe_response)
+            print(type(phonepe_response))
+            print(dir(phonepe_response))
 
             print("\n========== PAYMENT INITIATED SUCCESSFULLY ==========\n")
 
