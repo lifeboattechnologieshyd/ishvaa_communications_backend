@@ -2,7 +2,7 @@ import time
 import uuid
 
 from phonepe.sdk.pg.common.exceptions import ServerError, BadRequest
-
+import phonepe_response
 from django.conf import settings
 from phonepe.sdk.pg.common.models.request.meta_info import MetaInfo
 from phonepe.sdk.pg.common.models.request.pg_payment_request import PgPaymentRequest
@@ -76,8 +76,16 @@ def create_upi_mandate(
         order_expire_at=int(time.time() * 1000) + 900000,
         max_amount=amount,
     )
+    result = client.setup(setup_request)
 
-    return client.setup(setup_request)
+    #  Debug — see exactly what comes back
+    print("Result type:", type(result))
+    print("Result dict:", result.__dict__)
+
+    return result.__dict__  # return as plain dict for now
+
+
+    # return client.setup(setup_request)
 # upi intent for mobile app
 def create_upi_intent_mandate(
     merchant_order_id,
