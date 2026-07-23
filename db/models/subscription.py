@@ -61,11 +61,20 @@ class OrganizationSubscription(AuditModel):
 
     auto_renew = models.BooleanField(default=True)
 
-    starts_at = models.DateTimeField()
+    starts_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
 
-    expires_at = models.DateTimeField()
+    expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
 
-    next_billing_at = models.DateTimeField()
+    next_billing_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         db_table = "organization_subscriptions"
