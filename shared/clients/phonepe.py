@@ -1,4 +1,7 @@
 import time
+import uuid
+
+from phonepe.sdk.pg.common.exceptions import ServerError, BadRequest
 
 from django.conf import settings
 from phonepe.sdk.pg.common.models.request.meta_info import MetaInfo
@@ -132,6 +135,44 @@ def create_upi_collect_mandate(
 
     return client.setup(setup_request)
 
+
+import time
+
+MAX_RETRIES = 3
+
+def create_upi_collect_mandate_with_retry(amount, vpa, merchant_subscription_id):
+    for attempt in range(1, MAX_RETRIES + 1):
+        merchant_order_id = str(uuid.uuid4())  #  fresh ID every attempt
+
+        print(f"Attempt {attempt} | merchant_order_id: {merchant_order_id}")
+
+        try:
+            client = get_subscription_client()
+
+            setup_request = PgPaymentRequest.build_subscription_setup_upi_collect(
+                merchant_order_id=merchant_order_id,
+                merchant_subscription_id=merchant_subscription_id,
+                amount=amount,
+                auth_workflow_type=AuthWorkflowType.TRANSACTION,
+                subscription_expire_at=int(time.time() * 1000) + 1000000,
+                amount_type=AmountType.VARIABLE,
+                frequency=Frequency.ON_DEMAND,
+                order_expire_at=int((time.time() + 24 * 60 * 60) * 1000),
+                max_amount=amount,
+                vpa=vpa,
+            )
+
+            response = client.setup(setup_request)
+            return merchant_order_id, response  #  return the ID that worked
+
+        except ServerError as e:
+            print(f"Attempt {attempt} failed with 500: {e}")
+            if attempt == MAX_RETRIES:
+                raise
+            time.sleep(1)  # wait before retry
+
+        except BadRequest:
+            raise  # don't retry on 400, it's our fault
 
 def validate_phonepe_webhook(auth_header, raw_body):
     client = get_subscription_client()

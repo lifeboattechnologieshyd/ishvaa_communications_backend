@@ -2,12 +2,13 @@ import uuid
 
 from dateutil.relativedelta import relativedelta
 from django.utils import timezone
+from phonepe.sdk.pg.common.http_client_modules import phonepe_response
 from rest_framework.views import APIView
 
 from db.models import OrganizationSubscription, Organization, OrganizationStatus
 from db.models.subscription import SubscriptionPayment, PaymentStatus, SubscriptionStatus, SubscriptionPlan
 from shared.clients.phonepe import phone_pe_initiate, create_upi_intent_mandate, create_upi_collect_mandate, \
-    validate_phonepe_webhook
+    validate_phonepe_webhook, create_upi_collect_mandate_with_retry
 from shared.utils import CustomResponse
 
 
@@ -89,15 +90,14 @@ class SubscriptionPaymentAPIView(APIView):
             print("Amount (Paise):", amount_in_paise)
             print("VPA:", data.get("vpa"))
 
-            phonepe_response = create_upi_collect_mandate(
-                merchant_order_id=merchant_order_id,
+            payment = SubscriptionPayment.objects.create(
+                subscription=subscription,
+                transaction_id=merchant_order_id,  #  save the ID that actually succeeded
                 merchant_subscription_id=merchant_subscription_id,
-                amount=amount_in_paise,
-                vpa=data.get("vpa"),
+                amount=plan.amount,
+                status=PaymentStatus.PENDING,
+                response=phonepe_response,
             )
-            payment.response = phonepe_response
-            payment.status = PaymentStatus.PENDING  # pending user action now
-            payment.save()
 
             print("\nPhonePe Response:")
             print(phonepe_response)
