@@ -14,7 +14,10 @@ from shared.utils import CustomResponse
 class SubscriptionPaymentAPIView(APIView):
 
     def post(self, request):
+        print("\n========== SUBSCRIPTION PAYMENT API ==========")
+
         data = request.data
+        print("Request Data:", data)
 
         required_fields = [
             "organization_id",
@@ -23,30 +26,45 @@ class SubscriptionPaymentAPIView(APIView):
 
         for field in required_fields:
             if data.get(field) in [None, ""]:
+                print(f"{field} is missing.")
                 return CustomResponse().errorResponse(
                     data={},
                     description=f"{field.replace('_', ' ').title()} is required."
                 )
 
         try:
+            print("\nFetching Organization...")
             organization = Organization.objects.get(
                 id=data.get("organization_id")
             )
+            print("Organization Found:", organization.id)
 
+            print("\nFetching Subscription Plan...")
             plan = SubscriptionPlan.objects.get(
                 id=data.get("plan_id"),
                 is_active=True,
             )
+            print("Plan Found:", plan.id)
+            print("Plan Name:", plan.name)
+            print("Plan Amount:", plan.amount)
+            print("Plan Amount Type:", type(plan.amount))
 
+            print("\nCreating Organization Subscription...")
             subscription = OrganizationSubscription.objects.create(
                 organization=organization,
                 plan=plan,
                 status=SubscriptionStatus.PENDING,
             )
+            print("Subscription Created:", subscription.id)
 
             merchant_order_id = str(uuid.uuid4())
             merchant_subscription_id = str(uuid.uuid4())
 
+            print("\nGenerated IDs")
+            print("Merchant Order ID:", merchant_order_id)
+            print("Merchant Subscription ID:", merchant_subscription_id)
+
+            print("\nCreating Subscription Payment...")
             payment = SubscriptionPayment.objects.create(
                 subscription=subscription,
                 transaction_id=merchant_order_id,
@@ -54,13 +72,30 @@ class SubscriptionPaymentAPIView(APIView):
                 status=PaymentStatus.PENDING,
             )
 
+            print("Payment Created:", payment.id)
+            print("Payment Amount:", payment.amount)
+            print("Payment Amount Type:", type(payment.amount))
+
+            amount_in_paise = int(float(plan.amount) * 100)
+
+            print("\nCalling PhonePe...")
+            print("Merchant Order ID:", merchant_order_id)
+            print("Merchant Subscription ID:", merchant_subscription_id)
+            print("Amount (Rupees):", plan.amount)
+            print("Amount (Paise):", amount_in_paise)
+            print("VPA:", data.get("vpa"))
 
             phonepe_response = create_upi_collect_mandate(
                 merchant_order_id=merchant_order_id,
                 merchant_subscription_id=merchant_subscription_id,
-                amount=plan.amount,
+                amount=amount_in_paise,
                 vpa=data.get("vpa"),
             )
+
+            print("\nPhonePe Response:")
+            print(phonepe_response)
+
+            print("\n========== PAYMENT INITIATED SUCCESSFULLY ==========\n")
 
             return CustomResponse().successResponse(
                 data={
@@ -72,23 +107,29 @@ class SubscriptionPaymentAPIView(APIView):
             )
 
         except Organization.DoesNotExist:
+            print("Organization not found.")
             return CustomResponse().errorResponse(
                 data={},
                 description="Organization not found."
             )
 
         except SubscriptionPlan.DoesNotExist:
+            print("Subscription plan not found.")
             return CustomResponse().errorResponse(
                 data={},
                 description="Subscription plan not found."
             )
 
         except Exception as error:
+            print("\n========== EXCEPTION ==========")
+            print(type(error).__name__)
+            print(str(error))
+            print("================================\n")
+
             return CustomResponse().errorResponse(
                 data={},
                 description=str(error)
             )
-
 
 class PhonePeWebhookAPIView(APIView):
 
