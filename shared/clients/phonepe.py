@@ -107,6 +107,8 @@ def create_upi_collect_mandate(
     amount,
     vpa,
 ):
+    print("merchant_order_id:", merchant_order_id)
+    print("merchant_subscription_id:", merchant_subscription_id)
     client = get_subscription_client()
 
     setup_request = PgPaymentRequest.build_subscription_setup_upi_collect(
