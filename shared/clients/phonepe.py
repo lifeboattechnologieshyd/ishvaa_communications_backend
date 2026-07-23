@@ -123,6 +123,8 @@ def create_upi_collect_mandate(
         max_amount=amount,
         vpa=vpa,
     )
+    print("Setup Request:")
+    print(setup_request)
 
     return client.setup(setup_request)
 
