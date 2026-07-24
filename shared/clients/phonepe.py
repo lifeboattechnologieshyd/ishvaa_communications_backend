@@ -54,6 +54,8 @@ def get_subscription_client():
         client_version=client_version,
         env=env,
     )
+
+
 def create_upi_mandate(
     merchant_order_id,
     merchant_subscription_id,
