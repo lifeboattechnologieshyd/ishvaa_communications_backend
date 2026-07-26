@@ -7,6 +7,7 @@ class EmailService:
     @staticmethod
     def send_email(organization, api_key, data):
         sender = data.get("from")
+        sender_name = data.get("from_name")
         recipients = data.get("to")
         subject = data.get("subject")
         html = data.get("html")
@@ -40,7 +41,8 @@ class EmailService:
             recipients=recipients,
             subject=subject,
             html=html,
-            reply_to=reply_to
+            reply_to=reply_to,
+            name=sender_name
         )
 
         email = EmailLog.objects.create(
