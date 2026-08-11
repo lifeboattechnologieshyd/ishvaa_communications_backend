@@ -46,10 +46,12 @@ class SESProvider:
             recipients,
             subject,
             html,
-            reply_to=None
+            reply_to=None,
+            name="",
     ):
+        fromEmailAddress = f"{name} <{sender}>"
         response = self.client.send_email(
-            FromEmailAddress=sender,
+            FromEmailAddress=fromEmailAddress,
             Destination={
                 "ToAddresses": recipients
             },

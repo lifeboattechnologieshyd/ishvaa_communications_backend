@@ -1,10 +1,11 @@
 from django.contrib.auth import authenticate
 from django.core.paginator import Paginator
 from django.db import transaction
+from django.db.models import Count
 from django.utils import timezone
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from db.models import UserMaster, UserRole, Organization
+from db.models import UserMaster, UserRole, Organization, EmailLog
 
 
 class AuthService:
@@ -86,7 +87,14 @@ class OrganizationService:
 
     @staticmethod
     def get_organizations(request):
-        queryset = Organization.objects.all().order_by("-created_at")
+        queryset = (
+            Organization.objects
+            .annotate(
+                domains_count=Count("domains", distinct=True),
+                api_keys_count=Count("api_keys", distinct=True),
+            )
+            .order_by("-created_at")
+        )
         search = request.get("search")
         if search:
             queryset = queryset.filter(
@@ -103,6 +111,15 @@ class OrganizationService:
         organizations = paginator.get_page(page)
         results = []
         for organization in organizations:
+            #TODO: RIGHT NOW ITS OK TO HAVE STATIC DATA BUT EVENTUALLY, WE NEED TO MAKE THIS DYNAMIC
+            monthly_quota = 50000
+            emails_sent = EmailLog.objects.filter(
+                organization=organization,
+                created_at__year=timezone.now().year,
+                created_at__month=timezone.now().month
+            ).count()
+
+            usage = round((emails_sent / monthly_quota) * 100, 2)
             results.append({
                 "id": str(organization.id),
                 "name": organization.name,
@@ -110,7 +127,15 @@ class OrganizationService:
                 "phone": organization.phone,
                 "website": organization.website,
                 "status": organization.status,
-                "created_at": organization.created_at
+                "domains": organization.domains_count,
+                "api_keys": organization.api_keys_count,
+                "plan": "Email Basic",
+                "monthly_fee": 999,
+                "monthly_quota": monthly_quota,
+                "emails_sent": emails_sent,
+                "usage_percentage": usage,
+                "created_at": organization.created_at,
+                "last_activity": organization.updated_at
             })
         return {
             "count": paginator.count,
