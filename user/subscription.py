@@ -57,7 +57,6 @@ class SubscriptionPaymentAPIView(APIView):
                     status=PaymentStatus.INITIATED,
                 )
 
-            # Call PhonePe outside transaction — network call
             try:
                 pg_response = create_upi_collect_mandate(
                     merchant_order_id=merchant_order_id,
