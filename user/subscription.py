@@ -1,3 +1,4 @@
+import traceback
 import uuid
 
 from dateutil.relativedelta import relativedelta
@@ -9,7 +10,7 @@ from rest_framework.views import APIView
 from db.models import OrganizationSubscription, Organization, OrganizationStatus
 from db.models.subscription import SubscriptionPayment, PaymentStatus, SubscriptionStatus, SubscriptionPlan
 from shared.clients.phonepe import phone_pe_initiate, create_upi_intent_mandate, create_upi_collect_mandate, \
-    validate_phonepe_webhook
+    validate_subscription_webhook
 from shared.utils import CustomResponse
 
 
@@ -18,30 +19,46 @@ class SubscriptionPaymentAPIView(APIView):
     def post(self, request):
         data = request.data
 
-        required_fields = ["organization_id", "plan_id"]
+        organization_id = data.get("organization_id")
+        plan_id = data.get("plan_id")
+        payment_mode = data.get("payment_mode", "COLLECT").upper()
+        vpa = data.get("vpa")
 
-        for field in required_fields:
-            if data.get(field) in [None, ""]:
-                return CustomResponse().errorResponse(
-                    data={},
-                    description=f"{field.replace('_', ' ').title()} is required."
-                )
+        if not organization_id:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Organization is required."
+            )
+
+        if not plan_id:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Plan is required."
+            )
+
+        if payment_mode == "COLLECT" and not vpa:
+            return CustomResponse().errorResponse(
+                data={},
+                description="VPA is required for UPI Collect."
+            )
 
         try:
+
             organization = Organization.objects.get(
-                id=data.get("organization_id")
+                id=organization_id
             )
 
             plan = SubscriptionPlan.objects.get(
-                id=data.get("plan_id"),
+                id=plan_id,
                 is_active=True,
             )
 
             merchant_order_id = str(uuid.uuid4())
             merchant_subscription_id = str(uuid.uuid4())
-            amount_in_paise = int(float(plan.amount) * 100)
+            amount_in_paise = int(plan.amount * 100)
 
             with transaction.atomic():
+
                 subscription = OrganizationSubscription.objects.create(
                     organization=organization,
                     plan=plan,
@@ -57,71 +74,104 @@ class SubscriptionPaymentAPIView(APIView):
                     status=PaymentStatus.INITIATED,
                 )
 
-            try:
-                pg_response = create_upi_collect_mandate(
+            print("Merchant Order ID:", merchant_order_id)
+            print("Merchant Subscription ID:", merchant_subscription_id)
+
+            if payment_mode == "INTENT":
+
+                phonepe_response = create_upi_intent_mandate(
                     merchant_order_id=merchant_order_id,
                     merchant_subscription_id=merchant_subscription_id,
                     amount=amount_in_paise,
-                    vpa=data.get("vpa"),
                 )
 
-                print("PhonePe Response:", pg_response)
-                print("PhonePe Response Type:", type(pg_response))
+            else:
 
-                # Convert response to dict for storage
-                if hasattr(pg_response, '__dict__'):
-                    response_data = pg_response.__dict__
-                elif isinstance(pg_response, dict):
-                    response_data = pg_response
-                else:
-                    response_data = {"raw": str(pg_response)}
-
-                payment.status = PaymentStatus.PENDING
-                payment.response = response_data
-                payment.save()
-
-            except Exception as phonepe_error:
-                print("PhonePe Error:", str(phonepe_error))
-
-                payment.status = PaymentStatus.FAILED
-                payment.failure_reason = str(phonepe_error)
-                payment.save()
-
-                subscription.status = SubscriptionStatus.FAILED
-                subscription.save()
-
-                return CustomResponse().errorResponse(
-                    data={},
-                    description="Payment initiation failed. Please try again."
+                phonepe_response = create_upi_collect_mandate(
+                    merchant_order_id=merchant_order_id,
+                    merchant_subscription_id=merchant_subscription_id,
+                    amount=amount_in_paise,
+                    vpa=vpa,
                 )
+
+            print("PhonePe Response:", phonepe_response)
+
+            if hasattr(phonepe_response, "__dict__"):
+                response_data = phonepe_response.__dict__
+            elif isinstance(phonepe_response, dict):
+                response_data = phonepe_response
+            else:
+                response_data = {
+                    "response": str(phonepe_response)
+                }
+
+            payment.status = PaymentStatus.PENDING
+            payment.response = response_data
+            payment.save(
+                update_fields=[
+                    "status",
+                    "response",
+                ]
+            )
 
             return CustomResponse().successResponse(
                 data={
                     "subscription_id": str(subscription.id),
                     "payment_id": str(payment.id),
+                    "merchant_order_id": merchant_order_id,
+                    "merchant_subscription_id": merchant_subscription_id,
+                    "payment_mode": payment_mode,
                     "phonepe_response": response_data,
                 },
-                description="Payment initiated successfully."
+                description="Subscription payment initiated successfully."
             )
 
         except Organization.DoesNotExist:
+
             return CustomResponse().errorResponse(
                 data={},
                 description="Organization not found."
             )
 
         except SubscriptionPlan.DoesNotExist:
+
             return CustomResponse().errorResponse(
                 data={},
                 description="Subscription plan not found."
             )
 
-        except Exception as error:
-            print("Unexpected Error:", type(error).__name__, str(error))
+        except Exception as exc:
+
+            traceback.print_exc()
+
+            print("PhonePe Error:", str(exc))
+
+            try:
+
+                payment.status = PaymentStatus.FAILED
+                payment.failure_reason = str(exc)
+                payment.save(
+                    update_fields=[
+                        "status",
+                        "failure_reason",
+                    ]
+                )
+
+                subscription.status = SubscriptionStatus.FAILED
+                subscription.save(
+                    update_fields=[
+                        "status",
+                    ]
+                )
+
+            except Exception:
+                pass
+
             return CustomResponse().errorResponse(
                 data={},
-                description="Something went wrong. Please try again."
+                description=str(exc)
             )
+
 
 class PhonePeWebhookAPIView(APIView):
 
@@ -138,7 +188,7 @@ class PhonePeWebhookAPIView(APIView):
             print("Authorization Header :", auth_header)
             print("Raw Body :", raw_body)
 
-            callback_response = validate_phonepe_webhook(
+            callback_response = validate_subscription_webhook(
                 auth_header=auth_header,
                 raw_body=raw_body,
             )

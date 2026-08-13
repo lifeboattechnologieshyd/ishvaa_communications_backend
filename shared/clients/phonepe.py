@@ -13,6 +13,15 @@ from phonepe.sdk.pg.subscription.v2.models.request.amount_type import AmountType
 from phonepe.sdk.pg.subscription.v2.models.request.auth_workflow_type import AuthWorkflowType
 from phonepe.sdk.pg.subscription.v2.models.request.frequency import Frequency
 from phonepe.sdk.pg.common.models.request.pg_payment_request import PgPaymentRequest
+from phonepe.sdk.pg.subscription.v2.subscription_client import SubscriptionClient
+
+
+import time
+from uuid import uuid4
+
+from django.conf import settings
+
+from phonepe.sdk.pg.subscription.v2.subscription_client import SubscriptionClient
 
 client_secret = settings.PHONE_PE_CLIENT_SECRETE
 client_id = settings.PHONE_PE_CLIENT_ID
@@ -44,17 +53,19 @@ def phone_pe_initiate(order_id, amount):
 
     return client.create_sdk_order(sdk_order_request=sdk_order_request)
 
-from phonepe.sdk.pg.subscription.v2.subscription_client import SubscriptionClient
+
 
 
 def get_subscription_client():
+    """
+    Returns PhonePe Subscription Client.
+    """
     return SubscriptionClient.get_instance(
-        client_id=client_id,
-        client_secret=client_secret,
-        client_version=client_version,
-        env=env,
+        client_id=settings.PHONE_PE_CLIENT_ID,
+        client_secret=settings.PHONE_PE_CLIENT_SECRETE,
+        client_version=settings.PHONE_PE_CLIENT_VERSION,
+        env=settings.PHONE_PE_ENV,
     )
-
 
 def create_upi_mandate(
     merchant_order_id,
@@ -96,7 +107,7 @@ def create_upi_intent_mandate(
 ):
     client = get_subscription_client()
 
-    setup_request = PgPaymentRequest.build_subscription_setup_upi_intent(
+    request = PgPaymentRequest.build_subscription_setup_upi_intent(
         merchant_order_id=merchant_order_id,
         merchant_subscription_id=merchant_subscription_id,
         amount=amount,
@@ -104,14 +115,15 @@ def create_upi_intent_mandate(
         merchant_callback_scheme="",
         target_app="PHONEPE",
         auth_workflow_type=AuthWorkflowType.TRANSACTION,
-        subscription_expire_at=int(time.time() * 1000) + 1000000,
+        subscription_expire_at=int(time.time() * 1000) + 86400000,
         amount_type=AmountType.FIXED,
         frequency=Frequency.ON_DEMAND,
-        order_expire_at=int(time.time() * 1000) + 1000000,
+        order_expire_at=int(time.time() * 1000) + 900000,
         max_amount=amount,
     )
 
-    return client.setup(setup_request)
+    return client.setup(request)
+
 
 # upi collect for web
 def create_upi_collect_mandate(
@@ -122,35 +134,33 @@ def create_upi_collect_mandate(
 ):
     client = get_subscription_client()
 
-    setup_request = PgPaymentRequest.build_subscription_setup_upi_collect(
+    request = PgPaymentRequest.build_subscription_setup_upi_collect(
         merchant_order_id=merchant_order_id,
         merchant_subscription_id=merchant_subscription_id,
         amount=amount,
         auth_workflow_type=AuthWorkflowType.TRANSACTION,
-        subscription_expire_at=int(time.time() * 1000) + 1000000,
-        amount_type=AmountType.VARIABLE,
+        subscription_expire_at=int(time.time() * 1000) + 86400000,
+        amount_type=AmountType.FIXED,
         frequency=Frequency.ON_DEMAND,
-        order_expire_at=int((time.time() + 24 * 60 * 60) * 1000),
+        order_expire_at=int(time.time() * 1000) + 900000,
         max_amount=amount,
         vpa=vpa,
     )
 
-    print("Merchant Order ID:", merchant_order_id)
+    return client.setup(request)
 
-    return client.setup(setup_request)
-def validate_phonepe_webhook(auth_header, raw_body):
+def validate_subscription_webhook(
+    auth_header,
+    raw_body,
+):
     client = get_subscription_client()
 
-    callback_response = client.validate_callback(
+    return client.validate_callback(
         username=settings.PHONEPE_WEBHOOK_USERNAME,
         password=settings.PHONEPE_WEBHOOK_PASSWORD,
         callback_header_data=auth_header,
         callback_response_data=raw_body,
     )
-
-    print("Callback Validation Response :", callback_response)
-
-    return callback_response
 
 def create_phonepe_subscription(subscription_id, amount):
     client = get_phonepe_client()
@@ -163,23 +173,25 @@ def create_phonepe_subscription(subscription_id, amount):
 
     return create_subscription_response
 
-def get_phonepe_subscription_status(subscription_id):
-    client = get_phonepe_client()
+def get_subscription_status(
+    merchant_order_id,
+    details=True,
+):
+    client = get_subscription_client()
 
-    subscription_status = client.get_subscription_status(
-        merchant_subscription_id=str(subscription_id)
+    return client.get_subscription_status(
+        merchant_order_id=merchant_order_id,
+        details=details,
     )
 
-    return subscription_status
+def cancel_subscription(
+    merchant_subscription_id,
+):
+    client = get_subscription_client()
 
-def cancel_phonepe_subscription(subscription_id):
-    client = get_phonepe_client()
-
-    cancel_response = client.cancel_subscription(
-        merchant_subscription_id=str(subscription_id)
+    return client.cancel(
+        merchant_subscription_id=merchant_subscription_id,
     )
-
-    return cancel_response
 
 def get_phonepe_payment_status(transaction_id):
     client = get_phonepe_client()
@@ -189,3 +201,39 @@ def get_phonepe_payment_status(transaction_id):
     )
 
     return payment_status
+
+
+def resume_subscription(
+    merchant_subscription_id,
+):
+    client = get_subscription_client()
+
+    return client.resume(
+        merchant_subscription_id=merchant_subscription_id,
+    )
+
+def pause_subscription(
+    merchant_subscription_id,
+    pause_start_date,
+    pause_end_date,
+):
+    client = get_subscription_client()
+
+    return client.pause(
+        merchant_subscription_id=merchant_subscription_id,
+        pause_start_date=pause_start_date,
+        pause_end_date=pause_end_date,
+    )
+
+def redeem_subscription(
+    merchant_order_id,
+    merchant_subscription_id,
+    amount,
+):
+    client = get_subscription_client()
+
+    return client.redeem(
+        merchant_order_id=merchant_order_id,
+        merchant_subscription_id=merchant_subscription_id,
+        amount=amount,
+    )
