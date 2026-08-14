@@ -12,6 +12,12 @@ class SubscriptionPlan(AuditModel):
     name = models.CharField(max_length=100, unique=True)
     code = models.CharField(max_length=50, unique=True)
 
+    razorpay_plan_id = models.CharField(
+        max_length=100,
+        unique=True,
+        db_index=True,
+    )
+
     amount = models.DecimalField(max_digits=10, decimal_places=2)
 
     billing_cycle = models.CharField(
