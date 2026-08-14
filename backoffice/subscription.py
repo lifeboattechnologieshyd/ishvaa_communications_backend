@@ -48,6 +48,7 @@ class SubscriptionPlanAPIView(APIView):
                 billing_cycle=data.get("billing_cycle"),
                 emails_per_month=data.get("emails_per_month"),
                 is_active=data.get("is_active", True),
+
             )
 
             return CustomResponse().successResponse(

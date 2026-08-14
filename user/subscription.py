@@ -563,3 +563,43 @@ class RazorpayWebhookAPIView(APIView):
             data={},
             description="Webhook processed successfully"
         )
+
+
+class SubscriptionPlanView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+
+        try:
+
+            plans = SubscriptionPlan.objects.filter(
+                is_active=True
+            ).order_by("amount")
+
+            response = []
+
+            for plan in plans:
+
+                response.append({
+                    "id": str(plan.id),
+                    "name": plan.name,
+                    "code": plan.code,
+                    "amount": str(plan.amount),
+                    "billing_cycle": plan.billing_cycle,
+                    "emails_per_month": plan.emails_per_month,
+                    "is_active": plan.is_active,
+                })
+
+            return CustomResponse().successResponse(
+                data=response,
+                description="Subscription plans fetched successfully."
+            )
+
+        except Exception as e:
+
+            traceback.print_exc()
+
+            return CustomResponse().errorResponse(
+                data={},
+                description=str(e)
+            )
