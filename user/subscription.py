@@ -1,7 +1,7 @@
 import traceback
 import uuid
 from django.conf import settings
-
+from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from django.db import transaction
 from django.utils import timezone
@@ -11,7 +11,7 @@ from db.models import OrganizationSubscription, Organization, OrganizationStatus
 from db.models.subscription import SubscriptionPayment, PaymentStatus, SubscriptionStatus, SubscriptionPlan
 from shared.clients.phonepe import phone_pe_initiate, create_upi_intent_mandate, create_upi_collect_mandate, \
     validate_subscription_webhook
-from shared.clients.razorpay import create_razorpay_subscription
+from shared.clients.razorpay import create_razorpay_subscription, get_razorpay_client
 from shared.utils import CustomResponse
 import json
 import traceback
@@ -302,7 +302,6 @@ class OrganizationSubscriptionAPIView(APIView):
 
 
 class RazorpayWebhookAPIView(APIView):
-
     permission_classes = [AllowAny]
     authentication_classes = []
 
@@ -317,15 +316,9 @@ class RazorpayWebhookAPIView(APIView):
         print("Signature:", signature)
         print("Body:", body)
 
+        client = get_razorpay_client()
+
         try:
-
-            client = razorpay.Client(
-                auth=(
-                    settings.RAZORPAY_KEY_ID,
-                    settings.RAZORPAY_KEY_SECRET,
-                )
-            )
-
             client.utility.verify_webhook_signature(
                 body,
                 signature,
@@ -335,8 +328,6 @@ class RazorpayWebhookAPIView(APIView):
             print("Webhook Signature Verified")
 
         except Exception:
-
-            print("========== INVALID SIGNATURE ==========")
             traceback.print_exc()
 
             return CustomResponse().errorResponse(
@@ -362,208 +353,216 @@ class RazorpayWebhookAPIView(APIView):
             .get("entity", {})
         )
 
-        merchant_subscription_id = subscription_entity.get("id")
+        subscription = None
 
-        if not merchant_subscription_id:
-            merchant_subscription_id = payment_entity.get("subscription_id")
+        if subscription_entity:
 
-        if not merchant_subscription_id:
+            razorpay_subscription_id = subscription_entity.get("id")
 
-            return CustomResponse().successResponse(
-                data={},
-                description="Subscription not found in webhook"
+            subscription = OrganizationSubscription.objects.filter(
+                merchant_subscription_id=razorpay_subscription_id
+            ).first()
+
+            if not subscription:
+
+                return CustomResponse().successResponse(
+                    data={},
+                    description="Subscription not found"
+                )
+
+        # ---------------------------------------------------------
+        # SUBSCRIPTION ACTIVATED
+        # ---------------------------------------------------------
+
+        if event == "subscription.activated":
+
+            subscription.status = SubscriptionStatus.ACTIVE
+
+            if subscription_entity.get("current_start"):
+                subscription.starts_at = datetime.fromtimestamp(
+                    subscription_entity["current_start"],
+                    tz=timezone.get_current_timezone(),
+                )
+
+            if subscription_entity.get("current_end"):
+                subscription.expires_at = datetime.fromtimestamp(
+                    subscription_entity["current_end"],
+                    tz=timezone.get_current_timezone(),
+                )
+
+            if subscription_entity.get("charge_at"):
+                subscription.next_billing_at = datetime.fromtimestamp(
+                    subscription_entity["charge_at"],
+                    tz=timezone.get_current_timezone(),
+                )
+
+            subscription.save(
+                update_fields=[
+                    "status",
+                    "starts_at",
+                    "expires_at",
+                    "next_billing_at",
+                ]
             )
 
-        subscription = OrganizationSubscription.objects.filter(
-            merchant_subscription_id=merchant_subscription_id
-        ).first()
+            payment = subscription.payments.order_by(
+                "-created_at"
+            ).first()
 
-        if subscription is None:
+            if payment:
 
-            return CustomResponse().successResponse(
-                data={},
-                description="Subscription not found"
+                payment.status = PaymentStatus.SUCCESS
+                payment.payment_date = timezone.now()
+                payment.response = payload
+
+                payment.save(
+                    update_fields=[
+                        "status",
+                        "payment_date",
+                        "response",
+                    ]
+                )
+
+            print("Subscription Activated")
+
+        # ---------------------------------------------------------
+        # SUBSCRIPTION AUTHENTICATED
+        # ---------------------------------------------------------
+
+        elif event == "subscription.authenticated":
+
+            subscription.response = payload if hasattr(subscription, "response") else None
+
+            print("Subscription Authenticated")
+
+        # ---------------------------------------------------------
+        # SUBSCRIPTION CANCELLED
+        # ---------------------------------------------------------
+
+        elif event == "subscription.cancelled":
+
+            subscription.status = SubscriptionStatus.CANCELLED
+
+            subscription.save(
+                update_fields=[
+                    "status",
+                ]
             )
 
-        payment = SubscriptionPayment.objects.filter(
-            subscription=subscription
-        ).order_by("-created_at").first()
+            print("Subscription Cancelled")
 
-        try:
+        # ---------------------------------------------------------
+        # SUBSCRIPTION PAUSED
+        # ---------------------------------------------------------
 
-            if event == "subscription.authenticated":
+        elif event == "subscription.paused":
 
-                print("Subscription Authenticated")
+            subscription.status = SubscriptionStatus.PAUSED
 
-                subscription.status = SubscriptionStatus.PENDING
-
-                subscription.save(
-                    update_fields=[
-                        "status",
-                    ]
-                )
-
-            elif event == "subscription.activated":
-
-                print("Subscription Activated")
-
-                subscription.status = SubscriptionStatus.ACTIVE
-                subscription.starts_at = timezone.now()
-
-                subscription.save(
-                    update_fields=[
-                        "status",
-                        "starts_at",
-                    ]
-                )
-
-            elif event == "subscription.charged":
-
-                print("Subscription Charged")
-
-                if payment:
-
-                    payment.status = PaymentStatus.SUCCESS
-                    payment.payment_date = timezone.now()
-                    payment.response = payload
-
-                    if payment_entity:
-                        payment.razorpay_payment_id = payment_entity.get("id")
-
-                    payment.save(
-                        update_fields=[
-                            "status",
-                            "payment_date",
-                            "response",
-                            "razorpay_payment_id",
-                        ]
-                    )
-
-            elif event == "payment.captured":
-
-                print("Payment Captured")
-
-                if payment:
-
-                    payment.status = PaymentStatus.SUCCESS
-                    payment.payment_date = timezone.now()
-                    payment.response = payload
-                    payment.razorpay_payment_id = payment_entity.get("id")
-
-                    payment.save(
-                        update_fields=[
-                            "status",
-                            "payment_date",
-                            "response",
-                            "razorpay_payment_id",
-                        ]
-                    )
-
-            elif event == "payment.failed":
-
-                print("Payment Failed")
-
-                subscription.status = SubscriptionStatus.FAILED
-
-                subscription.save(
-                    update_fields=[
-                        "status",
-                    ]
-                )
-
-                if payment:
-
-                    payment.status = PaymentStatus.FAILED
-                    payment.failure_reason = payment_entity.get(
-                        "error_description"
-                    )
-                    payment.response = payload
-
-                    if payment_entity:
-                        payment.razorpay_payment_id = payment_entity.get("id")
-
-                    payment.save(
-                        update_fields=[
-                            "status",
-                            "failure_reason",
-                            "response",
-                            "razorpay_payment_id",
-                        ]
-                    )
-
-            elif event == "subscription.cancelled":
-
-                print("Subscription Cancelled")
-
-                subscription.status = SubscriptionStatus.CANCELLED
-                subscription.auto_renew = False
-
-                subscription.save(
-                    update_fields=[
-                        "status",
-                        "auto_renew",
-                    ]
-                )
-
-            elif event == "subscription.completed":
-
-                print("Subscription Completed")
-
-                subscription.status = SubscriptionStatus.EXPIRED
-                subscription.expires_at = timezone.now()
-
-                subscription.save(
-                    update_fields=[
-                        "status",
-                        "expires_at",
-                    ]
-                )
-
-            elif event == "subscription.paused":
-
-                print("Subscription Paused")
-
-                subscription.status = SubscriptionStatus.PAUSED
-
-                subscription.save(
-                    update_fields=[
-                        "status",
-                    ]
-                )
-
-            elif event == "subscription.resumed":
-
-                print("Subscription Resumed")
-
-                subscription.status = SubscriptionStatus.ACTIVE
-
-                subscription.save(
-                    update_fields=[
-                        "status",
-                    ]
-                )
-
-            else:
-
-                print("Unhandled Event:", event)
-
-        except Exception:
-
-            print("========== WEBHOOK ERROR ==========")
-            traceback.print_exc()
-
-            return CustomResponse().errorResponse(
-                data={},
-                description="Webhook processing failed"
+            subscription.save(
+                update_fields=[
+                    "status",
+                ]
             )
+
+            print("Subscription Paused")
+
+        # ---------------------------------------------------------
+        # SUBSCRIPTION RESUMED
+        # ---------------------------------------------------------
+
+        elif event == "subscription.resumed":
+
+            subscription.status = SubscriptionStatus.ACTIVE
+
+            subscription.save(
+                update_fields=[
+                    "status",
+                ]
+            )
+
+            print("Subscription Resumed")
+
+        # ---------------------------------------------------------
+        # SUBSCRIPTION COMPLETED
+        # ---------------------------------------------------------
+
+        elif event == "subscription.completed":
+
+            subscription.status = SubscriptionStatus.EXPIRED
+
+            subscription.save(
+                update_fields=[
+                    "status",
+                ]
+            )
+
+            print("Subscription Completed")
+
+        # ---------------------------------------------------------
+        # PAYMENT CAPTURED
+        # ---------------------------------------------------------
+
+        elif event == "payment.captured":
+
+            payment_id = payment_entity.get("id")
+
+            payment = SubscriptionPayment.objects.filter(
+                subscription=subscription
+            ).order_by("-created_at").first()
+
+            if payment:
+
+                payment.phonepe_transaction_id = payment_id
+                payment.status = PaymentStatus.SUCCESS
+                payment.payment_date = timezone.now()
+                payment.response = payload
+
+                payment.save(
+                    update_fields=[
+                        "phonepe_transaction_id",
+                        "status",
+                        "payment_date",
+                        "response",
+                    ]
+                )
+
+            print("Payment Captured")
+
+        # ---------------------------------------------------------
+        # PAYMENT FAILED
+        # ---------------------------------------------------------
+
+        elif event == "payment.failed":
+
+            payment = SubscriptionPayment.objects.filter(
+                subscription=subscription
+            ).order_by("-created_at").first()
+
+            if payment:
+
+                payment.status = PaymentStatus.FAILED
+                payment.failure_reason = payment_entity.get(
+                    "error_description"
+                )
+                payment.response = payload
+
+                payment.save(
+                    update_fields=[
+                        "status",
+                        "failure_reason",
+                        "response",
+                    ]
+                )
+
+            print("Payment Failed")
 
         print("========== WEBHOOK SUCCESS ==========")
 
         return CustomResponse().successResponse(
             data={},
-            description="Webhook processed successfully"
+            description="Webhook processed successfully."
         )
-
 
 class SubscriptionPlanView(APIView):
     permission_classes = [AllowAny]
