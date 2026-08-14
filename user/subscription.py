@@ -362,12 +362,12 @@ class RazorpayWebhookAPIView(APIView):
             .get("entity", {})
         )
 
-        razorpay_subscription_id = subscription_entity.get("id")
+        merchant_subscription_id = subscription_entity.get("id")
 
-        if not razorpay_subscription_id:
-            razorpay_subscription_id = payment_entity.get("subscription_id")
+        if not merchant_subscription_id:
+            merchant_subscription_id = payment_entity.get("subscription_id")
 
-        if not razorpay_subscription_id:
+        if not merchant_subscription_id:
 
             return CustomResponse().successResponse(
                 data={},
@@ -375,7 +375,7 @@ class RazorpayWebhookAPIView(APIView):
             )
 
         subscription = OrganizationSubscription.objects.filter(
-            razorpay_subscription_id=razorpay_subscription_id
+            merchant_subscription_id=merchant_subscription_id
         ).first()
 
         if subscription is None:
