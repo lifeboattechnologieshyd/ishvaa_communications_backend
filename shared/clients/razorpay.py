@@ -6,6 +6,9 @@ import hmac
 import hashlib
 
 def get_razorpay_client():
+    print("RAZORPAY_KEY_ID:", getattr(settings, "RAZORPAY_KEY_ID", None))
+    print("RAZORPAY_KEY_SECRET:", getattr(settings, "RAZORPAY_KEY_SECRET", None))
+
     return razorpay.Client(
         auth=(
             settings.RAZORPAY_KEY_ID,
