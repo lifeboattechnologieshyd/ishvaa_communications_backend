@@ -147,29 +147,32 @@ class PaymentStatus(models.TextChoices):
 
 
 class SubscriptionPayment(AuditModel):
+
     subscription = models.ForeignKey(
         OrganizationSubscription,
         on_delete=models.CASCADE,
         related_name="payments"
     )
 
-    transaction_id = models.CharField(
+    razorpay_subscription_id = models.CharField(
         max_length=150,
-        unique=True,
-    )
-    merchant_subscription_id = models.CharField(
-        max_length=150,
-        null=True,
-        blank=True,
         db_index=True,
     )
 
-    phonepe_transaction_id = models.CharField(
+    razorpay_payment_id = models.CharField(
         max_length=150,
         blank=True,
         null=True,
         db_index=True,
     )
+
+    razorpay_invoice_id = models.CharField(
+        max_length=150,
+        blank=True,
+        null=True,
+        db_index=True,
+    )
+
     amount = models.DecimalField(
         max_digits=10,
         decimal_places=2
@@ -180,17 +183,15 @@ class SubscriptionPayment(AuditModel):
         choices=PaymentStatus.choices,
         db_index=True,
     )
+
     payment_date = models.DateTimeField(
         null=True,
-        blank=True
+        blank=True,
     )
+
     failure_reason = models.TextField(
         blank=True,
-        null=True
-    )
-    response_code = models.CharField(
-        max_length=50,
-        blank=True
+        null=True,
     )
 
     response = models.JSONField(default=dict)

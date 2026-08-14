@@ -1,6 +1,6 @@
 from django.urls import path
 
-from user.subscription import SubscriptionPaymentAPIView, PhonePeWebhookAPIView
+from user.subscription import SubscriptionPaymentAPIView, PhonePeWebhookAPIView, RazorpayWebhookAPIView
 from user.support import CreateSupportTicketAPIView, SupportTicketDetailAPIView, SendSupportMessageAPIView, \
     SubmitSupportTicketRatingAPIView
 from user.views import LoginApiView, CreateApiKeyApiView, CreateDomainApiView, ListDomainApiView, VerifyDomainApiView, \
@@ -17,6 +17,7 @@ urlpatterns = [
 
     path("create/payment",SubscriptionPaymentAPIView.as_view()),
     path("webhook",PhonePeWebhookAPIView.as_view()),
+    path("callback",RazorpayWebhookAPIView.as_view()),
 
     #############################################
     ## Support Urls

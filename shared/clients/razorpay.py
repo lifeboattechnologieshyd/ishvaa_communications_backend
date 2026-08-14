@@ -35,19 +35,14 @@ def create_plan(
     return plan
 
 
-def create_subscription(
-    plan_id,
-    total_count=120,
-):
+def create_razorpay_subscription(plan_id):
     client = get_razorpay_client()
 
-    subscription = client.subscription.create({
+    return client.subscription.create({
         "plan_id": plan_id,
-        "total_count": total_count,
         "customer_notify": 1,
+        "total_count": 120,
     })
-
-    return subscription
 
 
 def get_subscription(
