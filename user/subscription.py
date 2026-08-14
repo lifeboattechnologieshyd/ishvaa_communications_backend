@@ -73,7 +73,7 @@ class SubscriptionPaymentAPIView(APIView):
                 subscription = OrganizationSubscription.objects.create(
                     organization=organization,
                     plan=plan,
-                    razorpay_subscription_id=razorpay_subscription_id,
+                    merchant_subscription_id=razorpay_subscription_id,
                     status=SubscriptionStatus.PENDING,
                 )
 
