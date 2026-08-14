@@ -329,7 +329,7 @@ class RazorpayWebhookAPIView(APIView):
             client.utility.verify_webhook_signature(
                 body,
                 signature,
-                settings.RAZORPAY_WEBHOOK_SECRET,
+                settings.RAZORPAY_KEY_SECRET,
             )
 
             print("Webhook Signature Verified")
