@@ -28,13 +28,23 @@ class SubscriptionPaymentAPIView(APIView):
 
     def post(self, request):
 
-        organization_id = request.data.get("organization_id")
+        organization_name = request.data.get("organization_name")
+        email = request.data.get("email")
+        phone = request.data.get("phone")
+        website = request.data.get("website")
+        logo = request.data.get("logo")
         plan_id = request.data.get("plan_id")
 
-        if not organization_id:
+        if not organization_name:
             return CustomResponse().errorResponse(
                 data={},
-                description="Organization is required."
+                description="Organization name is required."
+            )
+
+        if not email:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Email is required."
             )
 
         if not plan_id:
@@ -43,14 +53,27 @@ class SubscriptionPaymentAPIView(APIView):
                 description="Plan is required."
             )
 
+        organization = None
         subscription = None
         payment = None
 
         try:
 
-            organization = Organization.objects.get(
-                id=organization_id
-            )
+            if Organization.objects.filter(
+                name__iexact=organization_name
+            ).exists():
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="Organization already exists."
+                )
+
+            if Organization.objects.filter(
+                email__iexact=email
+            ).exists():
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="Email already registered."
+                )
 
             plan = SubscriptionPlan.objects.get(
                 id=plan_id,
@@ -66,9 +89,17 @@ class SubscriptionPaymentAPIView(APIView):
             print("========== RAZORPAY RESPONSE ==========")
             print(razorpay_response)
 
-            razorpay_subscription_id = razorpay_response.get("id")
+            razorpay_subscription_id = razorpay_response["id"]
 
             with transaction.atomic():
+
+                organization = Organization.objects.create(
+                    name=organization_name,
+                    email=email,
+                    phone=phone,
+                    website=website,
+                    logo=logo,
+                )
 
                 subscription = OrganizationSubscription.objects.create(
                     organization=organization,
@@ -85,23 +116,18 @@ class SubscriptionPaymentAPIView(APIView):
                     response=razorpay_response,
                 )
 
+            print("Organization Created :", organization.id)
             print("Subscription Created :", subscription.id)
             print("Payment Created :", payment.id)
 
             return CustomResponse().successResponse(
                 data={
+                    "organization_id": str(organization.id),
                     "subscription_id": str(subscription.id),
                     "payment_id": str(payment.id),
                     "checkout_data": razorpay_response,
                 },
                 description="Subscription created successfully."
-            )
-
-        except Organization.DoesNotExist:
-
-            return CustomResponse().errorResponse(
-                data={},
-                description="Organization not found."
             )
 
         except SubscriptionPlan.DoesNotExist:
@@ -122,7 +148,6 @@ class SubscriptionPaymentAPIView(APIView):
 
                 payment.status = PaymentStatus.FAILED
                 payment.failure_reason = str(exc)
-
                 payment.save(
                     update_fields=[
                         "status",
@@ -133,12 +158,14 @@ class SubscriptionPaymentAPIView(APIView):
             if subscription:
 
                 subscription.status = SubscriptionStatus.FAILED
-
                 subscription.save(
                     update_fields=[
                         "status",
                     ]
                 )
+
+            if organization:
+                organization.delete()
 
             return CustomResponse().errorResponse(
                 data={},
