@@ -146,8 +146,6 @@ class VerifyDomainApiView(APIView):
 
 
 
-
-
 class SendOTPAPIView(APIView):
     permission_classes = [AllowAny]
 
@@ -185,6 +183,11 @@ class SendOTPAPIView(APIView):
 
                     print("Email OTP:", otp)
 
+                    response = {
+                        "email": email,
+                        "otp": otp,
+                    }
+
                 else:
 
                     UserOTP.objects.filter(
@@ -197,15 +200,15 @@ class SendOTPAPIView(APIView):
                         otp=otp,
                         expires_at=timezone.now() + timedelta(minutes=10),
                     )
-                    response = {
-
-                        "otp": otp,
-                    }
-
 
                     # send_sms(phone, otp)
 
                     print("Phone OTP:", otp)
+
+                    response = {
+                        "phone": phone,
+                        "otp": otp,
+                    }
 
             return CustomResponse().successResponse(
                 data=response,
