@@ -1,10 +1,20 @@
+import traceback
+
+from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 
+from db.models import UserOTP
 from shared.permissions import organization_management_required
 from shared.utils import CustomResponse
 from user.api_keys.keyservice import ApiKeyService
 from user.domainservice import DomainService
 from user.service import AuthService
+import random
+from datetime import timedelta
+
+from django.db import transaction
+from django.utils import timezone
+
 
 class LoginApiView(APIView):
     def post(self, request):
@@ -131,4 +141,176 @@ class VerifyDomainApiView(APIView):
             return CustomResponse().errorResponse(
                 data={},
                 description=str(error)
+            )
+
+
+
+
+
+
+class SendOTPAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+
+        email = request.data.get("email")
+        phone = request.data.get("phone")
+
+        if not email and not phone:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Email or phone is required."
+            )
+
+        otp = str(random.randint(1000, 9999))
+
+        try:
+
+            with transaction.atomic():
+
+                if email:
+
+                    UserOTP.objects.filter(
+                        email=email,
+                        is_used=False,
+                    ).delete()
+
+                    UserOTP.objects.create(
+                        email=email,
+                        otp=otp,
+                        expires_at=timezone.now() + timedelta(minutes=10),
+                    )
+
+                    # send_email(email, otp)
+
+                    print("Email OTP:", otp)
+
+                else:
+
+                    UserOTP.objects.filter(
+                        phone=phone,
+                        is_used=False,
+                    ).delete()
+
+                    UserOTP.objects.create(
+                        phone=phone,
+                        otp=otp,
+                        expires_at=timezone.now() + timedelta(minutes=10),
+                    )
+
+
+                    # send_sms(phone, otp)
+
+                    print("Phone OTP:", otp)
+
+            return CustomResponse().successResponse(
+                data={},
+                description="OTP sent successfully."
+            )
+
+        except Exception as e:
+
+            traceback.print_exc()
+
+            return CustomResponse().errorResponse(
+                data={},
+                description=str(e)
+            )
+
+
+class VerifyOTPAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+
+        email = request.data.get("email")
+        phone = request.data.get("phone")
+        otp = request.data.get("otp")
+
+        if not otp:
+            return CustomResponse().errorResponse(
+                data={},
+                description="OTP is required."
+            )
+
+        if not email and not phone:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Email or phone is required."
+            )
+
+        try:
+
+            if email:
+
+                otp_obj = UserOTP.objects.filter(
+                    email=email,
+                    otp=otp,
+                    is_used=False,
+                ).order_by("-created_at").first()
+
+            else:
+
+                otp_obj = UserOTP.objects.filter(
+                    phone=phone,
+                    otp=otp,
+                    is_used=False,
+                ).order_by("-created_at").first()
+
+            if otp_obj is None:
+
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="Invalid OTP."
+                )
+
+            if otp_obj.expires_at < timezone.now():
+
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="OTP has expired."
+                )
+
+            otp_obj.is_used = True
+
+            otp_obj.save(
+                update_fields=[
+                    "is_used",
+                ]
+            )
+
+            if otp_obj.user:
+
+                if email:
+
+                    otp_obj.user.email_verified = True
+
+                    otp_obj.user.save(
+                        update_fields=[
+                            "email_verified",
+                        ]
+                    )
+
+                if phone:
+
+                    otp_obj.user.phone_verified = True
+
+                    otp_obj.user.save(
+                        update_fields=[
+                            "phone_verified",
+                        ]
+                    )
+
+            return CustomResponse().successResponse(
+                data={},
+                description="OTP verified successfully."
+            )
+
+        except Exception as e:
+
+            traceback.print_exc()
+
+            return CustomResponse().errorResponse(
+                data={},
+                description=str(e)
             )

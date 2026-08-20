@@ -5,7 +5,7 @@ from user.subscription import SubscriptionPaymentAPIView, PhonePeWebhookAPIView,
 from user.support import CreateSupportTicketAPIView, SupportTicketDetailAPIView, SendSupportMessageAPIView, \
     SubmitSupportTicketRatingAPIView
 from user.views import LoginApiView, CreateApiKeyApiView, CreateDomainApiView, ListDomainApiView, VerifyDomainApiView, \
-    ListApiKeyApiView
+    ListApiKeyApiView, SendOTPAPIView, VerifyOTPAPIView
 
 urlpatterns = [
     path("v1/login", LoginApiView.as_view()),
@@ -21,6 +21,9 @@ urlpatterns = [
     path("callback",RazorpayWebhookAPIView.as_view()),
 
     path("plans",SubscriptionPlanView.as_view()),
+
+    path("send-otp",SendOTPAPIView.as_view()),
+    path("verify-otp",VerifyOTPAPIView.as_view()),
 
     #############################################
     ## Support Urls

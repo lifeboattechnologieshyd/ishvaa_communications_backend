@@ -79,3 +79,51 @@ class UserMaster(AuditModel, AbstractBaseUser):
     def __str__(self):
         return self.email
 
+
+class UserOTP(AuditModel):
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    user = models.ForeignKey(
+        UserMaster,
+        on_delete=models.CASCADE,
+        related_name="otps",
+        null=True,
+        blank=True,
+    )
+
+    phone = models.CharField(
+        max_length=15,
+        blank=True,
+        null=True,
+        db_index=True,
+    )
+
+    email = models.EmailField(
+        max_length=100,
+        blank=True,
+        null=True,
+        db_index=True,
+    )
+
+    otp = models.CharField(
+        max_length=6,
+    )
+
+    expires_at = models.DateTimeField()
+
+    is_used = models.BooleanField(
+        default=False,
+    )
+
+    class Meta:
+        db_table = "user_otp"
+
+        indexes = [
+            models.Index(fields=["phone", "expires_at", "otp"]),
+            models.Index(fields=["email", "expires_at", "otp"]),
+        ]
+
