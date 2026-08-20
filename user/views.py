@@ -197,6 +197,10 @@ class SendOTPAPIView(APIView):
                         otp=otp,
                         expires_at=timezone.now() + timedelta(minutes=10),
                     )
+                    response = {
+
+                        "otp": otp,
+                    }
 
 
                     # send_sms(phone, otp)
@@ -204,7 +208,7 @@ class SendOTPAPIView(APIView):
                     print("Phone OTP:", otp)
 
             return CustomResponse().successResponse(
-                data={},
+                data=response,
                 description="OTP sent successfully."
             )
 
