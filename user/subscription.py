@@ -181,9 +181,9 @@ class VerifySubscriptionPaymentAPIView(APIView):
 
     def post(self, request):
 
-        razorpay_payment_id = request.data.get("razorpay_payment_id")
-        razorpay_subscription_id = request.data.get("razorpay_subscription_id")
-        razorpay_signature = request.data.get("razorpay_signature")
+        razorpay_payment_id = request.data.get("payment_id")
+        razorpay_subscription_id = request.data.get("subscription_id")
+        razorpay_signature = request.data.get("signature")
 
         if not razorpay_payment_id:
             return CustomResponse().errorResponse(
