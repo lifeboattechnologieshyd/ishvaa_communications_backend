@@ -6,9 +6,11 @@ from dateutil.relativedelta import relativedelta
 from django.db import transaction
 from django.utils import timezone
 from phonepe.sdk.pg.common.http_client_modules import phonepe_response
+from razorpay.errors import SignatureVerificationError
 
 from db.models import OrganizationSubscription, Organization, OrganizationStatus
-from db.models.subscription import SubscriptionPayment, PaymentStatus, SubscriptionStatus, SubscriptionPlan
+from db.models.subscription import SubscriptionPayment, PaymentStatus, SubscriptionStatus, SubscriptionPlan, \
+    BillingCycle
 from shared.clients.phonepe import phone_pe_initiate, create_upi_intent_mandate, create_upi_collect_mandate, \
     validate_subscription_webhook
 from shared.clients.razorpay import create_razorpay_subscription, get_razorpay_client
@@ -170,6 +172,122 @@ class SubscriptionPaymentAPIView(APIView):
             return CustomResponse().errorResponse(
                 data={},
                 description=str(exc)
+            )
+
+
+
+class VerifySubscriptionPaymentAPIView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+
+        razorpay_payment_id = request.data.get("razorpay_payment_id")
+        razorpay_subscription_id = request.data.get("razorpay_subscription_id")
+        razorpay_signature = request.data.get("razorpay_signature")
+
+        if not razorpay_payment_id:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Razorpay payment id is required."
+            )
+
+        if not razorpay_subscription_id:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Razorpay subscription id is required."
+            )
+
+        if not razorpay_signature:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Razorpay signature is required."
+            )
+
+        try:
+
+            client = get_razorpay_client()
+
+            client.utility.verify_subscription_payment_signature(
+                {
+                    "razorpay_payment_id": razorpay_payment_id,
+                    "razorpay_subscription_id": razorpay_subscription_id,
+                    "razorpay_signature": razorpay_signature,
+                }
+            )
+
+            subscription = OrganizationSubscription.objects.filter(
+                merchant_subscription_id=razorpay_subscription_id
+            ).first()
+
+            if subscription is None:
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="Subscription not found."
+                )
+
+            payment = SubscriptionPayment.objects.filter(
+                razorpay_subscription_id=razorpay_subscription_id
+            ).first()
+
+            if payment is None:
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="Payment not found."
+                )
+
+            payment.razorpay_payment_id = razorpay_payment_id
+            payment.status = PaymentStatus.SUCCESS
+            payment.payment_date = timezone.now()
+
+            payment.save(
+                update_fields=[
+                    "razorpay_payment_id",
+                    "status",
+                    "payment_date",
+                ]
+            )
+
+            subscription.status = SubscriptionStatus.ACTIVE
+            subscription.starts_at = timezone.now()
+
+            if subscription.plan.billing_cycle == BillingCycle.MONTHLY:
+                subscription.next_billing_at = timezone.now() + relativedelta(months=1)
+                subscription.expires_at = timezone.now() + relativedelta(months=1)
+            else:
+                subscription.next_billing_at = timezone.now() + relativedelta(years=1)
+                subscription.expires_at = timezone.now() + relativedelta(years=1)
+
+            subscription.save(
+                update_fields=[
+                    "status",
+                    "starts_at",
+                    "next_billing_at",
+                    "expires_at",
+                ]
+            )
+
+            return CustomResponse().successResponse(
+                data={
+                    "subscription_id": str(subscription.id),
+                    "payment_id": str(payment.id),
+                },
+                description="Subscription verified successfully."
+            )
+
+        except SignatureVerificationError:
+
+            return CustomResponse().errorResponse(
+                data={},
+                description="Invalid Razorpay signature."
+            )
+
+        except Exception as e:
+
+            traceback.print_exc()
+
+            return CustomResponse().errorResponse(
+                data={},
+                description=str(e)
             )
 
 

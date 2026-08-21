@@ -1,7 +1,7 @@
 from django.urls import path
 
 from user.subscription import SubscriptionPaymentAPIView, PhonePeWebhookAPIView, RazorpayWebhookAPIView, \
-    SubscriptionPlanView
+    SubscriptionPlanView, VerifySubscriptionPaymentAPIView
 from user.support import CreateSupportTicketAPIView, SupportTicketDetailAPIView, SendSupportMessageAPIView, \
     SubmitSupportTicketRatingAPIView
 from user.views import LoginApiView, CreateApiKeyApiView, CreateDomainApiView, ListDomainApiView, VerifyDomainApiView, \
@@ -17,6 +17,7 @@ urlpatterns = [
     path("v1/domain/<uuid:domain_id>/verify", VerifyDomainApiView.as_view()),
 
     path("create/payment",SubscriptionPaymentAPIView.as_view()),
+    path("subscription/verify",VerifySubscriptionPaymentAPIView.as_view(),),
     path("webhook",PhonePeWebhookAPIView.as_view()),
     path("callback",RazorpayWebhookAPIView.as_view()),
 
