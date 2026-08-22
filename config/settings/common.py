@@ -254,7 +254,7 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     *default_headers,
     "x-request-id",
-    'X-API-KEY'
+    "x-api-key",
     "x-auth-token",
 ]
 CORS_EXPOSE_HEADERS = [
