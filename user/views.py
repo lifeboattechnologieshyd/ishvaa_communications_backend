@@ -11,7 +11,7 @@ from user.domainservice import DomainService
 from user.service import AuthService
 import random
 from datetime import timedelta
-
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.db import transaction
 from django.utils import timezone
 
@@ -249,7 +249,6 @@ class VerifyOTPAPIView(APIView):
         try:
 
             if email:
-
                 otp_obj = UserOTP.objects.filter(
                     email=email,
                     otp=otp,
@@ -257,7 +256,6 @@ class VerifyOTPAPIView(APIView):
                 ).order_by("-created_at").first()
 
             else:
-
                 otp_obj = UserOTP.objects.filter(
                     phone=phone,
                     otp=otp,
@@ -265,14 +263,12 @@ class VerifyOTPAPIView(APIView):
                 ).order_by("-created_at").first()
 
             if otp_obj is None:
-
                 return CustomResponse().errorResponse(
                     data={},
                     description="Invalid OTP."
                 )
 
             if otp_obj.expires_at < timezone.now():
-
                 return CustomResponse().errorResponse(
                     data={},
                     description="OTP has expired."
@@ -291,9 +287,7 @@ class VerifyOTPAPIView(APIView):
             if user:
 
                 if email:
-
                     user.email_verified = True
-
                     user.save(
                         update_fields=[
                             "email_verified",
@@ -301,9 +295,7 @@ class VerifyOTPAPIView(APIView):
                     )
 
                 if phone:
-
                     user.phone_verified = True
-
                     user.save(
                         update_fields=[
                             "phone_verified",
@@ -311,10 +303,25 @@ class VerifyOTPAPIView(APIView):
                     )
 
             # ------------------------------------
-            # Get user's organization
+            # Generate JWT tokens
             # ------------------------------------
 
-            organization = user.organization if user else None
+            if not user:
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="User not found."
+                )
+
+            refresh = RefreshToken.for_user(user)
+
+            access_token = str(refresh.access_token)
+            refresh_token = str(refresh)
+
+            # ------------------------------------
+            # Get organization
+            # ------------------------------------
+
+            organization = user.organization
 
             organization_data = None
 
@@ -348,9 +355,18 @@ class VerifyOTPAPIView(APIView):
 
             return CustomResponse().successResponse(
                 data={
-                    "user_id": str(user.id) if user else None,
-                    "email": user.email if user else email,
-                    "phone": user.phone if user else phone,
+                    "access": access_token,
+                    "refresh": refresh_token,
+
+                    "user": {
+                        "id": str(user.id),
+                        "email": user.email,
+                        "phone": user.phone,
+                        "first_name": user.first_name,
+                        "last_name": user.last_name,
+                        "role": user.role,
+                    },
+
                     "organization": organization_data,
                 },
                 description="OTP verified successfully."
@@ -365,52 +381,43 @@ class VerifyOTPAPIView(APIView):
                 description=str(e)
             )
 
-
 class OrganizationAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+
         user = request.user
 
         name = request.data.get("name")
-        email = request.data.get("email")
         phone = request.data.get("phone")
         website = request.data.get("website")
         logo = request.data.get("logo")
+
         timezone_value = request.data.get(
             "timezone",
             "Asia/Kolkata"
         )
+
         currency = request.data.get(
             "currency",
             "INR"
         )
+
         language = request.data.get(
             "language",
             "en"
         )
 
-
-
+        # Only mandatory field
         if not name:
             return CustomResponse().errorResponse(
                 data={},
                 description="Organization name is required."
             )
 
-        if not email:
-            return CustomResponse().errorResponse(
-                data={},
-                description="Email is required."
-            )
-
         try:
 
-            user = UserMaster.objects.get(
-                user_id=user.id
-            )
-
-            # Check whether user already has an organization
+            # User can have only one organization
             if user.organization:
 
                 return CustomResponse().errorResponse(
@@ -418,7 +425,7 @@ class OrganizationAPIView(APIView):
                     description="User is already linked to an organization."
                 )
 
-            # Check organization name
+            # Organization name must be unique
             if Organization.objects.filter(
                 name__iexact=name
             ).exists():
@@ -428,21 +435,11 @@ class OrganizationAPIView(APIView):
                     description="Organization name already exists."
                 )
 
-            # Check organization email
-            if Organization.objects.filter(
-                email__iexact=email
-            ).exists():
-
-                return CustomResponse().errorResponse(
-                    data={},
-                    description="Organization email already exists."
-                )
-
             with transaction.atomic():
 
                 organization = Organization.objects.create(
                     name=name,
-                    email=email,
+                    email=user.email,
                     phone=phone,
                     website=website,
                     logo=logo,
@@ -454,6 +451,7 @@ class OrganizationAPIView(APIView):
 
                 # Link user to organization
                 user.organization = organization
+
                 user.save(
                     update_fields=[
                         "organization",
@@ -476,13 +474,6 @@ class OrganizationAPIView(APIView):
                     "status": organization.status,
                 },
                 description="Organization created successfully."
-            )
-
-        except UserMaster.DoesNotExist:
-
-            return CustomResponse().errorResponse(
-                data={},
-                description="User not found."
             )
 
         except Exception as e:
