@@ -2,15 +2,28 @@ from django.db import models
 
 from db.models import AuditModel, Organization
 
-
 class BillingCycle(models.TextChoices):
     MONTHLY = "MONTHLY", "Monthly"
     YEARLY = "YEARLY", "Yearly"
 
 
+class AnalyticsLevel(models.TextChoices):
+    NONE = "NONE", "None"
+    BASIC = "BASIC", "Basic"
+    FULL = "FULL", "Full"
+
+
 class SubscriptionPlan(AuditModel):
-    name = models.CharField(max_length=100, unique=True)
-    code = models.CharField(max_length=50, unique=True)
+
+    name = models.CharField(
+        max_length=100,
+        unique=True,
+    )
+
+    code = models.CharField(
+        max_length=50,
+        unique=True,
+    )
 
     razorpay_plan_id = models.CharField(
         max_length=100,
@@ -18,22 +31,52 @@ class SubscriptionPlan(AuditModel):
         db_index=True,
     )
 
-    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+    )
+
+    currency = models.CharField(
+        max_length=10,
+        default="INR",
+    )
 
     billing_cycle = models.CharField(
         max_length=20,
-        choices=BillingCycle.choices
+        choices=BillingCycle.choices,
     )
 
-    emails_per_month = models.PositiveIntegerField()
+    # Limits
+    emails_per_month = models.PositiveIntegerField(
+        default=0,
+    )
+
+    max_verified_domains = models.PositiveIntegerField(
+        default=0,
+    )
+
+    max_api_keys = models.PositiveIntegerField(
+        default=0,
+    )
+
+    # Features
+    analytics_level = models.CharField(
+        max_length=20,
+        choices=AnalyticsLevel.choices,
+        default=AnalyticsLevel.NONE,
+    )
 
     is_active = models.BooleanField(
         default=True,
-        db_index=True
+        db_index=True,
     )
 
     class Meta:
         db_table = "subscription_plans"
+        ordering = ["amount"]
+
+    def __str__(self):
+        return self.name
 
 
 class SubscriptionStatus(models.TextChoices):

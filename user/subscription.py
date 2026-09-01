@@ -731,6 +731,10 @@ class SubscriptionPlanView(APIView):
                     "amount": str(plan.amount),
                     "billing_cycle": plan.billing_cycle,
                     "emails_per_month": plan.emails_per_month,
+                    "max_verified_domains":plan.max_verified_domains,
+                    "max_api_keys":plan.max_api_keys,
+                    "analytics_level":plan.analytics_level,
+                    ""
                     "is_active": plan.is_active,
                 })
 
