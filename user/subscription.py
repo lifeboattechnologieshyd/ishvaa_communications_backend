@@ -25,18 +25,12 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
 class SubscriptionPaymentAPIView(APIView):
-    permission_classes = (IsAuthenticated,)
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
 
-        organization_id = request.data.get("organization_id")
+        user = request.user
         plan_id = request.data.get("plan_id")
-
-        if not organization_id:
-            return CustomResponse().errorResponse(
-                data={},
-                description="Organization is required."
-            )
 
         if not plan_id:
             return CustomResponse().errorResponse(
@@ -49,15 +43,13 @@ class SubscriptionPaymentAPIView(APIView):
 
         try:
 
-            try:
-                organization = Organization.objects.get(
-                    id=organization_id
-                )
+            # Get organization from authenticated user
+            organization = user.organization
 
-            except Organization.DoesNotExist:
+            if not organization:
                 return CustomResponse().errorResponse(
                     data={},
-                    description="Organization not found."
+                    description="User is not linked to an organization."
                 )
 
             try:
@@ -72,14 +64,13 @@ class SubscriptionPaymentAPIView(APIView):
                     description="Subscription plan not found."
                 )
 
-            # Check existing active
+            # Check existing active subscription
             existing_subscription = (
                 OrganizationSubscription.objects
+                .select_related("plan")
                 .filter(
                     organization=organization,
-                    status__in=[
-                        SubscriptionStatus.ACTIVE,
-                    ]
+                    status=SubscriptionStatus.ACTIVE,
                 )
                 .order_by("-created_at")
                 .first()
@@ -99,7 +90,10 @@ class SubscriptionPaymentAPIView(APIView):
                             existing_subscription.status
                         ),
                     },
-                    description="Organization already has an active subscription."
+                    description=(
+                        "Organization already has "
+                        "an active subscription."
+                    )
                 )
 
             print(
@@ -155,7 +149,9 @@ class SubscriptionPaymentAPIView(APIView):
                     "plan_name": plan.name,
                     "checkout_data": razorpay_response,
                 },
-                description="Subscription payment initiated successfully."
+                description=(
+                    "Subscription payment initiated successfully."
+                )
             )
 
         except Exception as exc:
@@ -165,6 +161,7 @@ class SubscriptionPaymentAPIView(APIView):
             if payment:
                 payment.status = PaymentStatus.FAILED
                 payment.failure_reason = str(exc)
+
                 payment.save(
                     update_fields=[
                         "status",
@@ -174,6 +171,7 @@ class SubscriptionPaymentAPIView(APIView):
 
             if subscription:
                 subscription.status = SubscriptionStatus.FAILED
+
                 subscription.save(
                     update_fields=[
                         "status",
@@ -186,12 +184,14 @@ class SubscriptionPaymentAPIView(APIView):
             )
 
 class VerifySubscriptionPaymentAPIView(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def post(self, request):
 
         razorpay_payment_id = request.data.get("payment_id")
-        razorpay_subscription_id = request.data.get("subscription_id")
+        razorpay_subscription_id = request.data.get(
+            "subscription_id"
+        )
         razorpay_signature = request.data.get("signature")
 
         if not razorpay_payment_id:
@@ -214,19 +214,41 @@ class VerifySubscriptionPaymentAPIView(APIView):
 
         try:
 
+            user = request.user
+            organization = user.organization
+
+            if not organization:
+                return CustomResponse().errorResponse(
+                    data={},
+                    description=(
+                        "User is not linked to an organization."
+                    )
+                )
+
             client = get_razorpay_client()
 
             client.utility.verify_subscription_payment_signature(
                 {
                     "razorpay_payment_id": razorpay_payment_id,
-                    "razorpay_subscription_id": razorpay_subscription_id,
+                    "razorpay_subscription_id": (
+                        razorpay_subscription_id
+                    ),
                     "razorpay_signature": razorpay_signature,
                 }
             )
 
-            subscription = OrganizationSubscription.objects.filter(
-                merchant_subscription_id=razorpay_subscription_id
-            ).first()
+            # Make sure subscription belongs to logged-in user
+            subscription = (
+                OrganizationSubscription.objects
+                .select_related("plan")
+                .filter(
+                    merchant_subscription_id=(
+                        razorpay_subscription_id
+                    ),
+                    organization=organization,
+                )
+                .first()
+            )
 
             if subscription is None:
                 return CustomResponse().errorResponse(
@@ -234,9 +256,17 @@ class VerifySubscriptionPaymentAPIView(APIView):
                     description="Subscription not found."
                 )
 
-            payment = SubscriptionPayment.objects.filter(
-                razorpay_subscription_id=razorpay_subscription_id
-            ).first()
+            payment = (
+                SubscriptionPayment.objects
+                .filter(
+                    subscription=subscription,
+                    razorpay_subscription_id=(
+                        razorpay_subscription_id
+                    ),
+                )
+                .order_by("-created_at")
+                .first()
+            )
 
             if payment is None:
                 return CustomResponse().errorResponse(
@@ -256,15 +286,30 @@ class VerifySubscriptionPaymentAPIView(APIView):
                 ]
             )
 
+            now = timezone.now()
+
             subscription.status = SubscriptionStatus.ACTIVE
-            subscription.starts_at = timezone.now()
+            subscription.starts_at = now
 
             if subscription.plan.billing_cycle == BillingCycle.MONTHLY:
-                subscription.next_billing_at = timezone.now() + relativedelta(months=1)
-                subscription.expires_at = timezone.now() + relativedelta(months=1)
+
+                subscription.next_billing_at = (
+                    now + relativedelta(months=1)
+                )
+
+                subscription.expires_at = (
+                    now + relativedelta(months=1)
+                )
+
             else:
-                subscription.next_billing_at = timezone.now() + relativedelta(years=1)
-                subscription.expires_at = timezone.now() + relativedelta(years=1)
+
+                subscription.next_billing_at = (
+                    now + relativedelta(years=1)
+                )
+
+                subscription.expires_at = (
+                    now + relativedelta(years=1)
+                )
 
             subscription.save(
                 update_fields=[
@@ -277,8 +322,19 @@ class VerifySubscriptionPaymentAPIView(APIView):
 
             return CustomResponse().successResponse(
                 data={
-                    "subscription_id": str(subscription.id),
-                    "payment_id": str(payment.id),
+                    "organization_id": str(
+                        organization.id
+                    ),
+                    "subscription_id": str(
+                        subscription.id
+                    ),
+                    "payment_id": str(
+                        payment.id
+                    ),
+                    "plan_name": subscription.plan.name,
+                    "subscription_status": (
+                        subscription.status
+                    ),
                 },
                 description="Subscription verified successfully."
             )
