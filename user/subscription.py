@@ -7,7 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 from phonepe.sdk.pg.common.http_client_modules import phonepe_response
 from razorpay.errors import SignatureVerificationError
-from django.db.models import OuterRef, Subquery, Prefetch
+from django.db.models import OuterRef, Subquery, Prefetch, Q
 
 from db.models import OrganizationSubscription, Organization, OrganizationStatus
 from db.models.subscription import SubscriptionPayment, PaymentStatus, SubscriptionStatus, SubscriptionPlan, \
@@ -21,97 +21,24 @@ import traceback
 
 import razorpay
 
-from django.conf import settings
-from django.db import transaction
-from django.utils import timezone
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 
 class SubscriptionPaymentAPIView(APIView):
 
-    def get_organizations(self):
-        organizations = Organization.objects.prefetch_related(
-            Prefetch(
-                "subscriptions",
-                queryset=OrganizationSubscription.objects.select_related(
-                    "plan"
-                ).order_by("-created_at"),
-                to_attr="latest_subscriptions",
-            )
-        )
-
-        data = []
-
-        for organization in organizations:
-            subscription = (
-                organization.latest_subscriptions[0]
-                if organization.latest_subscriptions
-                else None
-            )
-
-            data.append({
-                "id": str(organization.id),
-                "name": organization.name,
-                "email": organization.email,
-                "phone": organization.phone,
-                "website": organization.website,
-                "logo": organization.logo,
-                "status": organization.status,
-
-                "subscription_id": (
-                    str(subscription.id)
-                    if subscription else None
-                ),
-
-                "subscription_status": (
-                    subscription.status
-                    if subscription else None
-                ),
-
-                "plan_name": (
-                    subscription.plan.name
-                    if subscription else None
-                ),
-            })
-
-        return data
-
-    def get(self, request):
-
-        organizations = self.get_organizations()
-
-        return CustomResponse().successResponse(
-            data=organizations,
-            description="Organizations fetched successfully."
-        )
-
     def post(self, request):
 
-        data = request.data
+        organization_name = request.data.get("organization_name")
+        email = request.data.get("email")
+        phone = request.data.get("phone")
+        website = request.data.get("website")
+        logo = request.data.get("logo")
+        plan_id = request.data.get("plan_id")
 
-        organization_name = data.get("organization_name")
-        email = data.get("email")
-        phone = data.get("phone")
-        website = data.get("website")
-        logo = data.get("logo")
-        plan_id = data.get("plan_id")
-
-        if not organization_name:
+        if not organization_name and not email:
             return CustomResponse().errorResponse(
                 data={},
-                description="Organization name is required."
-            )
-
-        if not email:
-            return CustomResponse().errorResponse(
-                data={},
-                description="Email is required."
-            )
-
-        if not plan_id:
-            return CustomResponse().errorResponse(
-                data={},
-                description="Plan is required."
+                description="Organization name or email is required."
             )
 
         organization = None
@@ -120,22 +47,58 @@ class SubscriptionPaymentAPIView(APIView):
 
         try:
 
-            # Check whether organization name or email already exists
-            organization_exists = Organization.objects.filter(
-                name__iexact=organization_name
-            ).exists()
+            # Check existing organization by name OR email
+            organization = Organization.objects.filter(
+                Q(name__iexact=organization_name) |
+                Q(email__iexact=email)
+            ).first()
 
-            email_exists = Organization.objects.filter(
-                email__iexact=email
-            ).exists()
+            # If organization already exists,
+            # return organization and subscription details
+            if organization:
 
-            if organization_exists or email_exists:
-
-                organizations = self.get_organizations()
+                subscription = (
+                    OrganizationSubscription.objects
+                    .select_related("plan")
+                    .filter(
+                        organization=organization
+                    )
+                    .order_by("-created_at")
+                    .first()
+                )
 
                 return CustomResponse().successResponse(
-                    data=organizations,
-                    description="Organization already exists. Existing organizations fetched successfully."
+                    data={
+                        "organization_id": str(organization.id),
+                        "organization_name": organization.name,
+                        "email": organization.email,
+                        "phone": organization.phone,
+                        "website": organization.website,
+                        "logo": organization.logo,
+
+                        "subscription_id": (
+                            str(subscription.id)
+                            if subscription else None
+                        ),
+
+                        "subscription_status": (
+                            subscription.status
+                            if subscription else None
+                        ),
+
+                        "plan_name": (
+                            subscription.plan.name
+                            if subscription else None
+                        ),
+                    },
+                    description="Organization already exists."
+                )
+
+            # New organization requires plan
+            if not plan_id:
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="Plan is required."
                 )
 
             plan = SubscriptionPlan.objects.get(
@@ -183,21 +146,6 @@ class SubscriptionPaymentAPIView(APIView):
                     response=razorpay_response,
                 )
 
-            print(
-                "Organization Created :",
-                organization.id
-            )
-
-            print(
-                "Subscription Created :",
-                subscription.id
-            )
-
-            print(
-                "Payment Created :",
-                payment.id
-            )
-
             return CustomResponse().successResponse(
                 data={
                     "organization_id": str(organization.id),
@@ -218,11 +166,6 @@ class SubscriptionPaymentAPIView(APIView):
         except Exception as exc:
 
             traceback.print_exc()
-
-            print(
-                "========== RAZORPAY ERROR =========="
-            )
-            print(str(exc))
 
             if payment:
                 payment.status = PaymentStatus.FAILED
@@ -249,8 +192,6 @@ class SubscriptionPaymentAPIView(APIView):
                 data={},
                 description=str(exc)
             )
-
-
 
 class VerifySubscriptionPaymentAPIView(APIView):
     permission_classes = [AllowAny]
