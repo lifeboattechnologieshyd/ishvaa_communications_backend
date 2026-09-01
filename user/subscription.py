@@ -28,83 +28,78 @@ class SubscriptionPaymentAPIView(APIView):
 
     def post(self, request):
 
-        organization_name = request.data.get("organization_name")
-        email = request.data.get("email")
-        phone = request.data.get("phone")
-        website = request.data.get("website")
-        logo = request.data.get("logo")
+        organization_id = request.data.get("organization_id")
         plan_id = request.data.get("plan_id")
 
-        if not organization_name and not email:
+        if not organization_id:
             return CustomResponse().errorResponse(
                 data={},
-                description="Organization name or email is required."
+                description="Organization is required."
             )
 
-        organization = None
+        if not plan_id:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Plan is required."
+            )
+
         subscription = None
         payment = None
 
         try:
 
-            # Check existing organization by name OR email
-            organization = Organization.objects.filter(
-                Q(name__iexact=organization_name) |
-                Q(email__iexact=email)
-            ).first()
-
-            # If organization already exists,
-            # return organization and subscription details
-            if organization:
-
-                subscription = (
-                    OrganizationSubscription.objects
-                    .select_related("plan")
-                    .filter(
-                        organization=organization
-                    )
-                    .order_by("-created_at")
-                    .first()
+            try:
+                organization = Organization.objects.get(
+                    id=organization_id
                 )
 
-                return CustomResponse().successResponse(
-                    data={
-                        "organization_id": str(organization.id),
-                        "organization_name": organization.name,
-                        "email": organization.email,
-                        "phone": organization.phone,
-                        "website": organization.website,
-                        "logo": organization.logo,
-
-                        "subscription_id": (
-                            str(subscription.id)
-                            if subscription else None
-                        ),
-
-                        "subscription_status": (
-                            subscription.status
-                            if subscription else None
-                        ),
-
-                        "plan_name": (
-                            subscription.plan.name
-                            if subscription else None
-                        ),
-                    },
-                    description="Organization already exists."
-                )
-
-            # New organization requires plan
-            if not plan_id:
+            except Organization.DoesNotExist:
                 return CustomResponse().errorResponse(
                     data={},
-                    description="Plan is required."
+                    description="Organization not found."
                 )
 
-            plan = SubscriptionPlan.objects.get(
-                id=plan_id,
-                is_active=True,
+            try:
+                plan = SubscriptionPlan.objects.get(
+                    id=plan_id,
+                    is_active=True,
+                )
+
+            except SubscriptionPlan.DoesNotExist:
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="Subscription plan not found."
+                )
+
+            # Check existing active
+            existing_subscription = (
+                OrganizationSubscription.objects
+                .filter(
+                    organization=organization,
+                    status__in=[
+                        SubscriptionStatus.ACTIVE,
+                    ]
+                )
+                .order_by("-created_at")
+                .first()
             )
+
+            if existing_subscription:
+
+                return CustomResponse().errorResponse(
+                    data={
+                        "subscription_id": str(
+                            existing_subscription.id
+                        ),
+                        "plan_name": (
+                            existing_subscription.plan.name
+                        ),
+                        "subscription_status": (
+                            existing_subscription.status
+                        ),
+                    },
+                    description="Organization already has an active subscription."
+                )
 
             print(
                 "========== CREATING RAZORPAY SUBSCRIPTION =========="
@@ -123,24 +118,20 @@ class SubscriptionPaymentAPIView(APIView):
 
             with transaction.atomic():
 
-                organization = Organization.objects.create(
-                    name=organization_name,
-                    email=email,
-                    phone=phone,
-                    website=website,
-                    logo=logo,
-                )
-
                 subscription = OrganizationSubscription.objects.create(
                     organization=organization,
                     plan=plan,
-                    merchant_subscription_id=razorpay_subscription_id,
+                    merchant_subscription_id=(
+                        razorpay_subscription_id
+                    ),
                     status=SubscriptionStatus.PENDING,
                 )
 
                 payment = SubscriptionPayment.objects.create(
                     subscription=subscription,
-                    razorpay_subscription_id=razorpay_subscription_id,
+                    razorpay_subscription_id=(
+                        razorpay_subscription_id
+                    ),
                     amount=plan.amount,
                     status=PaymentStatus.INITIATED,
                     response=razorpay_response,
@@ -148,19 +139,22 @@ class SubscriptionPaymentAPIView(APIView):
 
             return CustomResponse().successResponse(
                 data={
-                    "organization_id": str(organization.id),
-                    "subscription_id": str(subscription.id),
-                    "payment_id": str(payment.id),
+                    "organization_id": str(
+                        organization.id
+                    ),
+                    "subscription_id": str(
+                        subscription.id
+                    ),
+                    "payment_id": str(
+                        payment.id
+                    ),
+                    "plan_id": str(
+                        plan.id
+                    ),
+                    "plan_name": plan.name,
                     "checkout_data": razorpay_response,
                 },
-                description="Subscription created successfully."
-            )
-
-        except SubscriptionPlan.DoesNotExist:
-
-            return CustomResponse().errorResponse(
-                data={},
-                description="Subscription plan not found."
+                description="Subscription payment initiated successfully."
             )
 
         except Exception as exc:
@@ -184,9 +178,6 @@ class SubscriptionPaymentAPIView(APIView):
                         "status",
                     ]
                 )
-
-            if organization:
-                organization.delete()
 
             return CustomResponse().errorResponse(
                 data={},
@@ -751,7 +742,6 @@ class SubscriptionPlanView(APIView):
                     "max_verified_domains":plan.max_verified_domains,
                     "max_api_keys":plan.max_api_keys,
                     "analytics_level":plan.analytics_level,
-                    ""
                     "is_active": plan.is_active,
                 })
 

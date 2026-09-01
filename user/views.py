@@ -1,9 +1,9 @@
 import traceback
 
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
-from db.models import UserOTP
+from db.models import UserOTP, OrganizationSubscription, UserMaster, Organization, OrganizationStatus
 from shared.permissions import organization_management_required
 from shared.utils import CustomResponse
 from user.api_keys.keyservice import ApiKeyService
@@ -286,13 +286,15 @@ class VerifyOTPAPIView(APIView):
                 ]
             )
 
-            if otp_obj.user:
+            user = otp_obj.user
+
+            if user:
 
                 if email:
 
-                    otp_obj.user.email_verified = True
+                    user.email_verified = True
 
-                    otp_obj.user.save(
+                    user.save(
                         update_fields=[
                             "email_verified",
                         ]
@@ -300,17 +302,187 @@ class VerifyOTPAPIView(APIView):
 
                 if phone:
 
-                    otp_obj.user.phone_verified = True
+                    user.phone_verified = True
 
-                    otp_obj.user.save(
+                    user.save(
                         update_fields=[
                             "phone_verified",
                         ]
                     )
 
+            # ------------------------------------
+            # Get user's organization
+            # ------------------------------------
+
+            organization = user.organization if user else None
+
+            organization_data = None
+
+            if organization:
+
+                subscription = (
+                    OrganizationSubscription.objects
+                    .select_related("plan")
+                    .filter(
+                        organization=organization
+                    )
+                    .order_by("-created_at")
+                    .first()
+                )
+
+                organization_data = {
+                    "id": str(organization.id),
+                    "name": organization.name,
+                    "email": organization.email,
+                    "phone": organization.phone,
+                    "website": organization.website,
+                    "logo": organization.logo,
+                    "status": organization.status,
+
+                    "subscription": {
+                        "id": str(subscription.id),
+                        "status": subscription.status,
+                        "plan_name": subscription.plan.name,
+                    } if subscription else None,
+                }
+
             return CustomResponse().successResponse(
-                data={},
+                data={
+                    "user_id": str(user.id) if user else None,
+                    "email": user.email if user else email,
+                    "phone": user.phone if user else phone,
+                    "organization": organization_data,
+                },
                 description="OTP verified successfully."
+            )
+
+        except Exception as e:
+
+            traceback.print_exc()
+
+            return CustomResponse().errorResponse(
+                data={},
+                description=str(e)
+            )
+
+
+class OrganizationAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+
+        name = request.data.get("name")
+        email = request.data.get("email")
+        phone = request.data.get("phone")
+        website = request.data.get("website")
+        logo = request.data.get("logo")
+        timezone_value = request.data.get(
+            "timezone",
+            "Asia/Kolkata"
+        )
+        currency = request.data.get(
+            "currency",
+            "INR"
+        )
+        language = request.data.get(
+            "language",
+            "en"
+        )
+
+
+
+        if not name:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Organization name is required."
+            )
+
+        if not email:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Email is required."
+            )
+
+        try:
+
+            user = UserMaster.objects.get(
+                user_id=user.id
+            )
+
+            # Check whether user already has an organization
+            if user.organization:
+
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="User is already linked to an organization."
+                )
+
+            # Check organization name
+            if Organization.objects.filter(
+                name__iexact=name
+            ).exists():
+
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="Organization name already exists."
+                )
+
+            # Check organization email
+            if Organization.objects.filter(
+                email__iexact=email
+            ).exists():
+
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="Organization email already exists."
+                )
+
+            with transaction.atomic():
+
+                organization = Organization.objects.create(
+                    name=name,
+                    email=email,
+                    phone=phone,
+                    website=website,
+                    logo=logo,
+                    timezone=timezone_value,
+                    currency=currency,
+                    language=language,
+                    status=OrganizationStatus.ACTIVE,
+                )
+
+                # Link user to organization
+                user.organization = organization
+                user.save(
+                    update_fields=[
+                        "organization",
+                    ]
+                )
+
+            return CustomResponse().successResponse(
+                data={
+                    "organization_id": str(
+                        organization.id
+                    ),
+                    "name": organization.name,
+                    "email": organization.email,
+                    "phone": organization.phone,
+                    "website": organization.website,
+                    "logo": organization.logo,
+                    "timezone": organization.timezone,
+                    "currency": organization.currency,
+                    "language": organization.language,
+                    "status": organization.status,
+                },
+                description="Organization created successfully."
+            )
+
+        except UserMaster.DoesNotExist:
+
+            return CustomResponse().errorResponse(
+                data={},
+                description="User not found."
             )
 
         except Exception as e:
