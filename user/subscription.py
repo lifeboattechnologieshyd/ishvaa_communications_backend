@@ -7,6 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 from phonepe.sdk.pg.common.http_client_modules import phonepe_response
 from razorpay.errors import SignatureVerificationError
+from django.db.models import OuterRef, Subquery, Prefetch
 
 from db.models import OrganizationSubscription, Organization, OrganizationStatus
 from db.models.subscription import SubscriptionPayment, PaymentStatus, SubscriptionStatus, SubscriptionPlan, \
@@ -28,14 +29,72 @@ from rest_framework.views import APIView
 
 class SubscriptionPaymentAPIView(APIView):
 
+    def get_organizations(self):
+        organizations = Organization.objects.prefetch_related(
+            Prefetch(
+                "subscriptions",
+                queryset=OrganizationSubscription.objects.select_related(
+                    "plan"
+                ).order_by("-created_at"),
+                to_attr="latest_subscriptions",
+            )
+        )
+
+        data = []
+
+        for organization in organizations:
+            subscription = (
+                organization.latest_subscriptions[0]
+                if organization.latest_subscriptions
+                else None
+            )
+
+            data.append({
+                "id": str(organization.id),
+                "name": organization.name,
+                "email": organization.email,
+                "phone": organization.phone,
+                "website": organization.website,
+                "logo": organization.logo,
+                "status": organization.status,
+
+                "subscription_id": (
+                    str(subscription.id)
+                    if subscription else None
+                ),
+
+                "subscription_status": (
+                    subscription.status
+                    if subscription else None
+                ),
+
+                "plan_name": (
+                    subscription.plan.name
+                    if subscription else None
+                ),
+            })
+
+        return data
+
+    def get(self, request):
+
+        organizations = self.get_organizations()
+
+        return CustomResponse().successResponse(
+            data=organizations,
+            description="Organizations fetched successfully."
+        )
+
     def post(self, request):
 
-        organization_name = request.data.get("organization_name")
-        email = request.data.get("email")
-        phone = request.data.get("phone")
-        website = request.data.get("website")
-        logo = request.data.get("logo")
-        plan_id = request.data.get("plan_id")
+        data = request.data
+
+        organization_name = data.get("organization_name")
+        email = data.get("email")
+        phone = data.get("phone")
+        website = data.get("website")
+        logo = data.get("logo")
+        plan_id = data.get("plan_id")
 
         if not organization_name:
             return CustomResponse().errorResponse(
@@ -61,20 +120,22 @@ class SubscriptionPaymentAPIView(APIView):
 
         try:
 
-            if Organization.objects.filter(
+            # Check whether organization name or email already exists
+            organization_exists = Organization.objects.filter(
                 name__iexact=organization_name
-            ).exists():
-                return CustomResponse().errorResponse(
-                    data={},
-                    description="Organization already exists."
-                )
+            ).exists()
 
-            if Organization.objects.filter(
+            email_exists = Organization.objects.filter(
                 email__iexact=email
-            ).exists():
-                return CustomResponse().errorResponse(
-                    data={},
-                    description="Email already registered."
+            ).exists()
+
+            if organization_exists or email_exists:
+
+                organizations = self.get_organizations()
+
+                return CustomResponse().successResponse(
+                    data=organizations,
+                    description="Organization already exists. Existing organizations fetched successfully."
                 )
 
             plan = SubscriptionPlan.objects.get(
@@ -82,13 +143,17 @@ class SubscriptionPaymentAPIView(APIView):
                 is_active=True,
             )
 
-            print("========== CREATING RAZORPAY SUBSCRIPTION ==========")
+            print(
+                "========== CREATING RAZORPAY SUBSCRIPTION =========="
+            )
 
             razorpay_response = create_razorpay_subscription(
                 plan_id=plan.razorpay_plan_id,
             )
 
-            print("========== RAZORPAY RESPONSE ==========")
+            print(
+                "========== RAZORPAY RESPONSE =========="
+            )
             print(razorpay_response)
 
             razorpay_subscription_id = razorpay_response["id"]
@@ -118,9 +183,20 @@ class SubscriptionPaymentAPIView(APIView):
                     response=razorpay_response,
                 )
 
-            print("Organization Created :", organization.id)
-            print("Subscription Created :", subscription.id)
-            print("Payment Created :", payment.id)
+            print(
+                "Organization Created :",
+                organization.id
+            )
+
+            print(
+                "Subscription Created :",
+                subscription.id
+            )
+
+            print(
+                "Payment Created :",
+                payment.id
+            )
 
             return CustomResponse().successResponse(
                 data={
@@ -143,11 +219,12 @@ class SubscriptionPaymentAPIView(APIView):
 
             traceback.print_exc()
 
-            print("========== RAZORPAY ERROR ==========")
+            print(
+                "========== RAZORPAY ERROR =========="
+            )
             print(str(exc))
 
             if payment:
-
                 payment.status = PaymentStatus.FAILED
                 payment.failure_reason = str(exc)
                 payment.save(
@@ -158,7 +235,6 @@ class SubscriptionPaymentAPIView(APIView):
                 )
 
             if subscription:
-
                 subscription.status = SubscriptionStatus.FAILED
                 subscription.save(
                     update_fields=[
