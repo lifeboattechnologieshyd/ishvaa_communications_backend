@@ -248,14 +248,20 @@ class VerifyOTPAPIView(APIView):
 
         try:
 
+            # -----------------------------
+            # Get OTP
+            # -----------------------------
+
             if email:
+
                 otp_obj = UserOTP.objects.filter(
-                    email=email,
+                    email__iexact=email,
                     otp=otp,
                     is_used=False,
                 ).order_by("-created_at").first()
 
             else:
+
                 otp_obj = UserOTP.objects.filter(
                     phone=phone,
                     otp=otp,
@@ -274,52 +280,99 @@ class VerifyOTPAPIView(APIView):
                     description="OTP has expired."
                 )
 
+            # -----------------------------
+            # Get User
+            # -----------------------------
+
+            user = otp_obj.user
+
+            if not user:
+
+                if email:
+
+                    user = UserMaster.objects.filter(
+                        email__iexact=email
+                    ).first()
+
+                else:
+
+                    user = UserMaster.objects.filter(
+                        phone=phone
+                    ).first()
+
+            # -----------------------------
+            # Create user if not exists
+            # -----------------------------
+
+            if not user:
+
+                user_data = {}
+
+                if email:
+                    user_data["email"] = email
+
+                if phone:
+                    user_data["phone"] = phone
+
+                user = UserMaster.objects.create(
+                    **user_data
+                )
+
+            # -----------------------------
+            # Mark OTP as used
+            # -----------------------------
+
+            otp_obj.user = user
             otp_obj.is_used = True
 
             otp_obj.save(
                 update_fields=[
+                    "user",
                     "is_used",
                 ]
             )
 
-            user = otp_obj.user
+            # -----------------------------
+            # Verify email / phone
+            # -----------------------------
 
-            if user:
+            if email:
 
-                if email:
-                    user.email_verified = True
-                    user.save(
-                        update_fields=[
-                            "email_verified",
-                        ]
-                    )
+                user.email_verified = True
 
-                if phone:
-                    user.phone_verified = True
-                    user.save(
-                        update_fields=[
-                            "phone_verified",
-                        ]
-                    )
-
-            # ------------------------------------
-            # Generate JWT tokens
-            # ------------------------------------
-
-            if not user:
-                return CustomResponse().errorResponse(
-                    data={},
-                    description="User not found."
+                user.save(
+                    update_fields=[
+                        "email_verified",
+                    ]
                 )
+
+            if phone:
+
+                user.phone_verified = True
+
+                user.save(
+                    update_fields=[
+                        "phone_verified",
+                    ]
+                )
+
+            # -----------------------------
+            # Generate JWT
+            # -----------------------------
 
             refresh = RefreshToken.for_user(user)
 
-            access_token = str(refresh.access_token)
-            refresh_token = str(refresh)
+            access_token = str(
+                refresh.access_token
+            )
 
-            # ------------------------------------
-            # Get organization
-            # ------------------------------------
+            refresh_token = str(
+                refresh
+            )
+
+            # -----------------------------
+            # Get Organization
+            # -----------------------------
 
             organization = user.organization
 
@@ -352,6 +405,10 @@ class VerifyOTPAPIView(APIView):
                         "plan_name": subscription.plan.name,
                     } if subscription else None,
                 }
+
+            # -----------------------------
+            # Response
+            # -----------------------------
 
             return CustomResponse().successResponse(
                 data={
