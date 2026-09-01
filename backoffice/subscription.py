@@ -40,15 +40,36 @@ class SubscriptionPlanAPIView(APIView):
                 description="Emails per month is required."
             )
 
+        if data.get("max_verified_domains") is None:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Maximum verified domains is required."
+            )
+
+        if data.get("max_api_keys") is None:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Maximum API keys is required."
+            )
+
+        if not data.get("analytics_level"):
+            return CustomResponse().errorResponse(
+                data={},
+                description="Analytics level is required."
+            )
+
         try:
             plan = SubscriptionPlan.objects.create(
                 name=data.get("name"),
                 code=data.get("code"),
                 amount=data.get("amount"),
+                currency=data.get("currency", "INR"),
                 billing_cycle=data.get("billing_cycle"),
                 emails_per_month=data.get("emails_per_month"),
+                max_verified_domains=data.get("max_verified_domains"),
+                max_api_keys=data.get("max_api_keys"),
+                analytics_level=data.get("analytics_level"),
                 is_active=data.get("is_active", True),
-
             )
 
             return CustomResponse().successResponse(
@@ -70,8 +91,12 @@ class SubscriptionPlanAPIView(APIView):
             "name",
             "code",
             "amount",
+            "currency",
             "billing_cycle",
             "emails_per_month",
+            "max_verified_domains",
+            "max_api_keys",
+            "analytics_level",
             "is_active",
         )
 
@@ -79,6 +104,96 @@ class SubscriptionPlanAPIView(APIView):
             data=list(plans),
             description="Subscription plans fetched successfully."
         )
+
+    def put(self, request, plan_id):
+        data = request.data
+
+        try:
+            plan = SubscriptionPlan.objects.get(
+                id=plan_id
+            )
+
+        except SubscriptionPlan.DoesNotExist:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Subscription plan not found."
+            )
+
+        if not data.get("name"):
+            return CustomResponse().errorResponse(
+                data={},
+                description="Name is required."
+            )
+
+        if not data.get("code"):
+            return CustomResponse().errorResponse(
+                data={},
+                description="Code is required."
+            )
+
+        if data.get("amount") is None:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Amount is required."
+            )
+
+        if not data.get("billing_cycle"):
+            return CustomResponse().errorResponse(
+                data={},
+                description="Billing cycle is required."
+            )
+
+        if data.get("emails_per_month") is None:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Emails per month is required."
+            )
+
+        if data.get("max_verified_domains") is None:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Maximum verified domains is required."
+            )
+
+        if data.get("max_api_keys") is None:
+            return CustomResponse().errorResponse(
+                data={},
+                description="Maximum API keys is required."
+            )
+
+        if not data.get("analytics_level"):
+            return CustomResponse().errorResponse(
+                data={},
+                description="Analytics level is required."
+            )
+
+        try:
+            plan.name = data.get("name")
+            plan.code = data.get("code")
+            plan.amount = data.get("amount")
+            plan.currency = data.get("currency", "INR")
+            plan.billing_cycle = data.get("billing_cycle")
+            plan.emails_per_month = data.get("emails_per_month")
+            plan.max_verified_domains = data.get("max_verified_domains")
+            plan.max_api_keys = data.get("max_api_keys")
+            plan.analytics_level = data.get("analytics_level")
+            plan.is_active = data.get("is_active", True)
+
+            plan.save()
+
+            return CustomResponse().successResponse(
+                data={
+                    "id": str(plan.id)
+                },
+                description="Subscription plan updated successfully."
+            )
+
+        except Exception as error:
+            return CustomResponse().errorResponse(
+                data={},
+                description=str(error)
+            )
+
 
 
 class PlanFeatureAPIView(APIView):

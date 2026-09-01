@@ -20,6 +20,8 @@ urlpatterns = [
     path("support/ticket/update", AdminUpdateSupportTicketStatusAPIView.as_view()),
 
     path("subscription/plan",SubscriptionPlanAPIView.as_view()),
+    path("subscription/plan/<uuid:plan_id>", SubscriptionPlanAPIView.as_view()),
+
     path("feature/plan",PlanFeatureAPIView.as_view()),
     path("organization-subscription",OrganizationSubscriptionAPIView.as_view()),
 ]
