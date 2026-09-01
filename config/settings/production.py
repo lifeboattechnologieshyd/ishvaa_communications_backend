@@ -12,9 +12,3 @@ DEBUG = True
 #       SILK SETTINGS      #
 ############################
 ENABLE_SILK = False
-
-
-
-ALLOWED_HOSTS = [
-
-]
