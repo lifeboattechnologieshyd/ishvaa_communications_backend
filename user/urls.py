@@ -5,7 +5,7 @@ from user.subscription import SubscriptionPaymentAPIView, PhonePeWebhookAPIView,
 from user.support import CreateSupportTicketAPIView, SupportTicketDetailAPIView, SendSupportMessageAPIView, \
     SubmitSupportTicketRatingAPIView
 from user.views import LoginApiView, CreateApiKeyApiView, CreateDomainApiView, ListDomainApiView, VerifyDomainApiView, \
-    ListApiKeyApiView, SendOTPAPIView, VerifyOTPAPIView
+    ListApiKeyApiView, SendOTPAPIView, VerifyOTPAPIView, OrganizationAPIView
 
 urlpatterns = [
     path("v1/login", LoginApiView.as_view()),
@@ -25,6 +25,8 @@ urlpatterns = [
 
     path("send-otp",SendOTPAPIView.as_view()),
     path("verify-otp",VerifyOTPAPIView.as_view()),
+
+    path("organisation",OrganizationAPIView.as_view()),
 
     #############################################
     ## Support Urls
