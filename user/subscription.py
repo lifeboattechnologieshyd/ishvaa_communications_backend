@@ -610,7 +610,6 @@ class OrganizationSubscriptionAPIView(APIView):
 
 
 
-
 class RazorpayWebhookAPIView(APIView):
 
     permission_classes = [AllowAny]
@@ -628,7 +627,15 @@ class RazorpayWebhookAPIView(APIView):
         # VERIFY WEBHOOK SIGNATURE
         # =========================================================
 
+        if not signature:
+
+            return CustomResponse().errorResponse(
+                data={},
+                description="Webhook signature missing.",
+            )
+
         try:
+
             client.utility.verify_webhook_signature(
                 body,
                 signature,
@@ -636,6 +643,7 @@ class RazorpayWebhookAPIView(APIView):
             )
 
         except Exception:
+
             traceback.print_exc()
 
             return CustomResponse().errorResponse(
@@ -648,6 +656,7 @@ class RazorpayWebhookAPIView(APIView):
         # =========================================================
 
         try:
+
             payload = json.loads(body)
 
         except json.JSONDecodeError:
@@ -660,6 +669,7 @@ class RazorpayWebhookAPIView(APIView):
         event = payload.get("event")
 
         if not isinstance(event, str):
+
             return CustomResponse().errorResponse(
                 data={},
                 description="Invalid webhook event.",
@@ -688,7 +698,7 @@ class RazorpayWebhookAPIView(APIView):
         )
 
         # =========================================================
-        # FIND SUBSCRIPTION
+        # FIND LOCAL SUBSCRIPTION
         # =========================================================
 
         subscription = None
@@ -717,31 +727,44 @@ class RazorpayWebhookAPIView(APIView):
 
             if not subscription:
 
-                # Acknowledge webhook so Razorpay does not
-                # repeatedly retry it.
+                # Return success so Razorpay does not keep
+                # retrying a webhook for an unknown subscription.
+
                 return CustomResponse().successResponse(
                     data={},
                     description="Subscription not found.",
                 )
 
+            # -----------------------------------------------------
+            # SUBSCRIPTION ACTIVATED
+            # -----------------------------------------------------
+
             if event == "subscription.activated":
+
+                update_fields = [
+                    "status",
+                ]
 
                 subscription.status = (
                     SubscriptionStatus.ACTIVE
                 )
 
-                update_fields = ["status"]
-
                 current_start = (
-                    subscription_entity.get("current_start")
+                    subscription_entity.get(
+                        "current_start"
+                    )
                 )
 
                 current_end = (
-                    subscription_entity.get("current_end")
+                    subscription_entity.get(
+                        "current_end"
+                    )
                 )
 
                 charge_at = (
-                    subscription_entity.get("charge_at")
+                    subscription_entity.get(
+                        "charge_at"
+                    )
                 )
 
                 if current_start:
@@ -753,7 +776,9 @@ class RazorpayWebhookAPIView(APIView):
                         )
                     )
 
-                    update_fields.append("starts_at")
+                    update_fields.append(
+                        "starts_at"
+                    )
 
                 if current_end:
 
@@ -764,7 +789,9 @@ class RazorpayWebhookAPIView(APIView):
                         )
                     )
 
-                    update_fields.append("expires_at")
+                    update_fields.append(
+                        "expires_at"
+                    )
 
                 if charge_at:
 
@@ -775,26 +802,170 @@ class RazorpayWebhookAPIView(APIView):
                         )
                     )
 
-                    update_fields.append("next_billing_at")
+                    update_fields.append(
+                        "next_billing_at"
+                    )
 
                 subscription.save(
                     update_fields=update_fields
                 )
 
+            # -----------------------------------------------------
+            # SUBSCRIPTION AUTHENTICATED
+            # -----------------------------------------------------
+
             elif event == "subscription.authenticated":
 
-                # Nothing to update.
+                # No database change required.
                 pass
 
-            elif event == "subscription.cancelled":
+            # -----------------------------------------------------
+            # SUBSCRIPTION CHARGED
+            # -----------------------------------------------------
+
+            elif event == "subscription.charged":
+
+                if not razorpay_payment_id:
+
+                    return CustomResponse().errorResponse(
+                        data={},
+                        description="Payment ID missing.",
+                    )
+
+                # -------------------------------------------------
+                # Idempotency
+                # -------------------------------------------------
+
+                existing_transaction = (
+                    Transaction.objects
+                    .filter(
+                        gateway_payment_id=(
+                            razorpay_payment_id
+                        )
+                    )
+                    .first()
+                )
+
+                if existing_transaction:
+
+                    return CustomResponse().successResponse(
+                        data={},
+                        description="Payment already processed.",
+                    )
+
+                # -------------------------------------------------
+                # Razorpay amount is in paise.
+                # -------------------------------------------------
+
+                razorpay_amount = (
+                    payment_entity.get("amount")
+                )
+
+                if razorpay_amount is None:
+
+                    return CustomResponse().errorResponse(
+                        data={},
+                        description="Payment amount missing.",
+                    )
+
+                amount = (
+                    Decimal(str(razorpay_amount))
+                    / Decimal("100")
+                )
+
+                currency = (
+                    payment_entity.get("currency")
+                    or subscription.plan.currency
+                )
+
+                # -------------------------------------------------
+                # Create NEW transaction for every charge.
+                # -------------------------------------------------
+
+                Transaction.objects.create(
+                    organization=subscription.organization,
+                    subscription=subscription,
+                    transaction_type=(
+                        TransactionType.SUBSCRIPTION
+                    ),
+                    status=(
+                        TransactionStatus.SUCCESS
+                    ),
+                    payment_gateway=(
+                        PaymentGateway.RAZORPAY
+                    ),
+                    amount=amount,
+                    currency=currency,
+                    gateway_payment_id=(
+                        razorpay_payment_id
+                    ),
+                    gateway_subscription_id=(
+                        razorpay_subscription_id
+                    ),
+                    payment_date=timezone.now(),
+                    response=payload,
+                )
+
+                # -------------------------------------------------
+                # Update next billing date if available.
+                # -------------------------------------------------
+
+                charge_at = (
+                    subscription_entity.get(
+                        "charge_at"
+                    )
+                )
+
+                if charge_at:
+
+                    subscription.next_billing_at = (
+                        datetime.fromtimestamp(
+                            charge_at,
+                            tz=timezone.get_current_timezone(),
+                        )
+                    )
+
+                    subscription.save(
+                        update_fields=[
+                            "next_billing_at",
+                        ]
+                    )
+
+            # -----------------------------------------------------
+            # SUBSCRIPTION PENDING
+            # -----------------------------------------------------
+
+            elif event == "subscription.pending":
 
                 subscription.status = (
-                    SubscriptionStatus.CANCELLED
+                    SubscriptionStatus.PENDING
                 )
 
                 subscription.save(
-                    update_fields=["status"]
+                    update_fields=[
+                        "status",
+                    ]
                 )
+
+            # -----------------------------------------------------
+            # SUBSCRIPTION HALTED
+            # -----------------------------------------------------
+
+            elif event == "subscription.halted":
+
+                subscription.status = (
+                    SubscriptionStatus.HALTED
+                )
+
+                subscription.save(
+                    update_fields=[
+                        "status",
+                    ]
+                )
+
+            # -----------------------------------------------------
+            # SUBSCRIPTION PAUSED
+            # -----------------------------------------------------
 
             elif event == "subscription.paused":
 
@@ -803,8 +974,14 @@ class RazorpayWebhookAPIView(APIView):
                 )
 
                 subscription.save(
-                    update_fields=["status"]
+                    update_fields=[
+                        "status",
+                    ]
                 )
+
+            # -----------------------------------------------------
+            # SUBSCRIPTION RESUMED
+            # -----------------------------------------------------
 
             elif event == "subscription.resumed":
 
@@ -813,8 +990,30 @@ class RazorpayWebhookAPIView(APIView):
                 )
 
                 subscription.save(
-                    update_fields=["status"]
+                    update_fields=[
+                        "status",
+                    ]
                 )
+
+            # -----------------------------------------------------
+            # SUBSCRIPTION CANCELLED
+            # -----------------------------------------------------
+
+            elif event == "subscription.cancelled":
+
+                subscription.status = (
+                    SubscriptionStatus.CANCELLED
+                )
+
+                subscription.save(
+                    update_fields=[
+                        "status",
+                    ]
+                )
+
+            # -----------------------------------------------------
+            # SUBSCRIPTION COMPLETED
+            # -----------------------------------------------------
 
             elif event == "subscription.completed":
 
@@ -823,17 +1022,38 @@ class RazorpayWebhookAPIView(APIView):
                 )
 
                 subscription.save(
-                    update_fields=["status"]
+                    update_fields=[
+                        "status",
+                    ]
                 )
 
         # =========================================================
-        # PAYMENT EVENTS
+        # PAYMENT AUTHORIZED
         # =========================================================
 
-        elif event in (
-            "payment.captured",
-            "payment.failed",
-        ):
+        elif event == "payment.authorized":
+
+            # Payment is authorized but not necessarily captured.
+            #
+            # Do NOT mark Transaction SUCCESS here.
+            #
+            # payment.captured / subscription.charged will handle
+            # the successful payment.
+
+            pass
+
+        # =========================================================
+        # PAYMENT CAPTURED
+        # =========================================================
+
+        elif event == "payment.captured":
+
+            if not razorpay_payment_id:
+
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="Payment ID missing.",
+                )
 
             if not subscription:
 
@@ -842,169 +1062,37 @@ class RazorpayWebhookAPIView(APIView):
                     description="Subscription not found.",
                 )
 
-            # =====================================================
-            # PAYMENT ALREADY PROCESSED
-            # =====================================================
+            # -----------------------------------------------------
+            # Find transaction using exact payment ID.
+            # -----------------------------------------------------
 
-            transaction_obj = None
-
-            if razorpay_payment_id:
-
-                transaction_obj = (
-                    Transaction.objects
-                    .filter(
-                        organization=subscription.organization,
-                        gateway_payment_id=razorpay_payment_id,
-                    )
-                    .first()
+            transaction_obj = (
+                Transaction.objects
+                .filter(
+                    organization=subscription.organization,
+                    gateway_payment_id=(
+                        razorpay_payment_id
+                    ),
                 )
+                .first()
+            )
 
-            # =====================================================
-            # PAYMENT CAPTURED
-            # =====================================================
+            # -----------------------------------------------------
+            # If transaction already exists, update it.
+            # -----------------------------------------------------
 
-            if event == "payment.captured":
+            if transaction_obj:
 
-                # -------------------------------------------------
-                # If this payment was already processed,
-                # make webhook idempotent.
-                # -------------------------------------------------
-
-                if transaction_obj:
-
-                    if transaction_obj.status != (
-                        TransactionStatus.SUCCESS
-                    ):
-
-                        transaction_obj.status = (
-                            TransactionStatus.SUCCESS
-                        )
-
-                        transaction_obj.payment_date = (
-                            timezone.now()
-                        )
-
-                        transaction_obj.response = payload
-
-                        transaction_obj.save(
-                            update_fields=[
-                                "status",
-                                "payment_date",
-                                "response",
-                            ]
-                        )
-
-                else:
-
-                    # -------------------------------------------------
-                    # Try to find an existing pending transaction.
-                    # This is mainly for the initial payment.
-                    # -------------------------------------------------
-
-                    transaction_obj = (
-                        Transaction.objects
-                        .filter(
-                            organization=subscription.organization,
-                            subscription=subscription,
-                            gateway_subscription_id=(
-                                razorpay_subscription_id
-                            ),
-                            status=TransactionStatus.PENDING,
-                        )
-                        .order_by("-created_at")
-                        .first()
-                    )
-
-                    # -------------------------------------------------
-                    # If no pending transaction exists,
-                    # this is most likely a recurring payment.
-                    # Create a NEW transaction.
-                    # -------------------------------------------------
-
-                    if not transaction_obj:
-
-                        amount = payment_entity.get("amount")
-
-                        amount_decimal = (
-                            Decimal(str(amount)) / Decimal("100")
-                            if amount is not None
-                            else Decimal("0")
-                        )
-
-                        transaction_obj = (
-                            Transaction.objects.create(
-                                organization=(
-                                    subscription.organization
-                                ),
-                                subscription=subscription,
-                                transaction_type=(
-                                    TransactionType.SUBSCRIPTION
-                                ),
-                                status=(
-                                    TransactionStatus.SUCCESS
-                                ),
-                                payment_gateway=(
-                                    PaymentGateway.RAZORPAY
-                                ),
-                                amount=amount_decimal,
-                                currency=(
-                                    payment_entity.get(
-                                        "currency"
-                                    )
-                                    or subscription.plan.currency
-                                ),
-                                gateway_payment_id=(
-                                    razorpay_payment_id
-                                ),
-                                gateway_subscription_id=(
-                                    razorpay_subscription_id
-                                ),
-                                payment_date=timezone.now(),
-                                response=payload,
-                            )
-                        )
-
-                    else:
-
-                        transaction_obj.gateway_payment_id = (
-                            razorpay_payment_id
-                        )
-
-                        transaction_obj.status = (
-                            TransactionStatus.SUCCESS
-                        )
-
-                        transaction_obj.payment_date = (
-                            timezone.now()
-                        )
-
-                        transaction_obj.response = payload
-
-                        transaction_obj.save(
-                            update_fields=[
-                                "gateway_payment_id",
-                                "status",
-                                "payment_date",
-                                "response",
-                            ]
-                        )
-
-            # =====================================================
-            # PAYMENT FAILED
-            # =====================================================
-
-            elif event == "payment.failed":
-
-                if transaction_obj:
+                if transaction_obj.status != (
+                    TransactionStatus.SUCCESS
+                ):
 
                     transaction_obj.status = (
-                        TransactionStatus.FAILED
+                        TransactionStatus.SUCCESS
                     )
 
-                    transaction_obj.failure_reason = (
-                        payment_entity.get(
-                            "error_description"
-                        )
+                    transaction_obj.payment_date = (
+                        timezone.now()
                     )
 
                     transaction_obj.response = payload
@@ -1012,17 +1100,165 @@ class RazorpayWebhookAPIView(APIView):
                     transaction_obj.save(
                         update_fields=[
                             "status",
-                            "failure_reason",
+                            "payment_date",
                             "response",
                         ]
                     )
 
-                else:
+            else:
 
-                    print(
-                        "Transaction not found for failed payment:",
-                        razorpay_payment_id,
+                # -------------------------------------------------
+                # This can happen if payment.captured arrives
+                # before our local transaction was created.
+                #
+                # Create the transaction instead of losing
+                # the payment record.
+                # -------------------------------------------------
+
+                razorpay_amount = (
+                    payment_entity.get("amount")
+                )
+
+                if razorpay_amount is None:
+
+                    return CustomResponse().errorResponse(
+                        data={},
+                        description="Payment amount missing.",
                     )
+
+                amount = (
+                    Decimal(str(razorpay_amount))
+                    / Decimal("100")
+                )
+
+                Transaction.objects.create(
+                    organization=subscription.organization,
+                    subscription=subscription,
+                    transaction_type=(
+                        TransactionType.SUBSCRIPTION
+                    ),
+                    status=(
+                        TransactionStatus.SUCCESS
+                    ),
+                    payment_gateway=(
+                        PaymentGateway.RAZORPAY
+                    ),
+                    amount=amount,
+                    currency=(
+                        payment_entity.get(
+                            "currency"
+                        )
+                        or subscription.plan.currency
+                    ),
+                    gateway_payment_id=(
+                        razorpay_payment_id
+                    ),
+                    gateway_subscription_id=(
+                        razorpay_subscription_id
+                    ),
+                    payment_date=timezone.now(),
+                    response=payload,
+                )
+
+        # =========================================================
+        # PAYMENT FAILED
+        # =========================================================
+
+        elif event == "payment.failed":
+
+            if not razorpay_payment_id:
+
+                return CustomResponse().errorResponse(
+                    data={},
+                    description="Payment ID missing.",
+                )
+
+            if not subscription:
+
+                return CustomResponse().successResponse(
+                    data={},
+                    description="Subscription not found.",
+                )
+
+            transaction_obj = (
+                Transaction.objects
+                .filter(
+                    organization=subscription.organization,
+                    gateway_payment_id=(
+                        razorpay_payment_id
+                    ),
+                )
+                .first()
+            )
+
+            if transaction_obj:
+
+                transaction_obj.status = (
+                    TransactionStatus.FAILED
+                )
+
+                transaction_obj.failure_reason = (
+                    payment_entity.get(
+                        "error_description"
+                    )
+                )
+
+                transaction_obj.response = payload
+
+                transaction_obj.save(
+                    update_fields=[
+                        "status",
+                        "failure_reason",
+                        "response",
+                    ]
+                )
+
+            else:
+
+                # A failed payment can also arrive before
+                # a local transaction exists.
+
+                razorpay_amount = (
+                    payment_entity.get("amount", 0)
+                )
+
+                amount = (
+                    Decimal(str(razorpay_amount))
+                    / Decimal("100")
+                )
+
+                Transaction.objects.create(
+                    organization=subscription.organization,
+                    subscription=subscription,
+                    transaction_type=(
+                        TransactionType.SUBSCRIPTION
+                    ),
+                    status=(
+                        TransactionStatus.FAILED
+                    ),
+                    payment_gateway=(
+                        PaymentGateway.RAZORPAY
+                    ),
+                    amount=amount,
+                    currency=(
+                        payment_entity.get(
+                            "currency"
+                        )
+                        or subscription.plan.currency
+                    ),
+                    gateway_payment_id=(
+                        razorpay_payment_id
+                    ),
+                    gateway_subscription_id=(
+                        razorpay_subscription_id
+                    ),
+                    failure_reason=(
+                        payment_entity.get(
+                            "error_description"
+                        )
+                    ),
+                    response=payload,
+                )
 
         # =========================================================
         # UNKNOWN EVENT
@@ -1034,6 +1270,10 @@ class RazorpayWebhookAPIView(APIView):
                 "Unhandled Razorpay webhook event:",
                 event,
             )
+
+        # =========================================================
+        # SUCCESS
+        # =========================================================
 
         return CustomResponse().successResponse(
             data={},
