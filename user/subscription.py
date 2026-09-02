@@ -27,6 +27,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.views import APIView
 
 class SubscriptionPaymentAPIView(APIView):
+
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -37,37 +38,39 @@ class SubscriptionPaymentAPIView(APIView):
         if not plan_id:
             return CustomResponse().errorResponse(
                 data={},
-                description="Plan is required."
+                description="Plan is required.",
             )
-
-        subscription = None
-        payment = None
-        transaction_obj = None
 
         try:
 
-            # Get organization from authenticated user
             organization = user.organization
 
             if not organization:
                 return CustomResponse().errorResponse(
                     data={},
-                    description="User is not linked to an organization."
+                    description=(
+                        "User is not linked to an organization."
+                    ),
                 )
 
             try:
+
                 plan = SubscriptionPlan.objects.get(
                     id=plan_id,
                     is_active=True,
                 )
 
             except SubscriptionPlan.DoesNotExist:
+
                 return CustomResponse().errorResponse(
                     data={},
-                    description="Subscription plan not found."
+                    description="Subscription plan not found.",
                 )
 
-            # Check existing active subscription
+            # -----------------------------------------------------
+            # Check active subscription
+            # -----------------------------------------------------
+
             existing_subscription = (
                 OrganizationSubscription.objects
                 .select_related("plan")
@@ -96,15 +99,21 @@ class SubscriptionPaymentAPIView(APIView):
                     description=(
                         "Organization already has "
                         "an active subscription."
-                    )
+                    ),
                 )
+
+            # -----------------------------------------------------
+            # Create Razorpay subscription
+            # -----------------------------------------------------
 
             print(
                 "========== CREATING RAZORPAY SUBSCRIPTION =========="
             )
 
-            razorpay_response = create_razorpay_subscription(
-                plan_id=plan.razorpay_plan_id,
+            razorpay_response = (
+                create_razorpay_subscription(
+                    plan_id=plan.razorpay_plan_id,
+                )
             )
 
             print(
@@ -112,36 +121,64 @@ class SubscriptionPaymentAPIView(APIView):
             )
             print(razorpay_response)
 
-            razorpay_subscription_id = razorpay_response["id"]
+            razorpay_subscription_id = (
+                razorpay_response["id"]
+            )
+
+            # -----------------------------------------------------
+            # Create local records
+            # -----------------------------------------------------
 
             with transaction.atomic():
 
-                subscription = OrganizationSubscription.objects.create(
-                    organization=organization,
-                    plan=plan,
-                    merchant_subscription_id=razorpay_subscription_id,
-                    status=SubscriptionStatus.PENDING,
+                subscription = (
+                    OrganizationSubscription.objects.create(
+                        organization=organization,
+                        plan=plan,
+                        merchant_subscription_id=(
+                            razorpay_subscription_id
+                        ),
+                        status=SubscriptionStatus.PENDING,
+                    )
                 )
 
-                transaction_obj = Transaction.objects.create(
-                    organization=organization,
-                    subscription=subscription,
-                    transaction_type=TransactionType.SUBSCRIPTION,
-                    status=TransactionStatus.PENDING,
-                    payment_gateway=PaymentGateway.RAZORPAY,
-                    amount=plan.amount,
-                    currency=plan.currency,
-                    gateway_subscription_id=razorpay_subscription_id,
-                    response=razorpay_response,
+                transaction_obj = (
+                    Transaction.objects.create(
+                        organization=organization,
+                        subscription=subscription,
+                        transaction_type=(
+                            TransactionType.SUBSCRIPTION
+                        ),
+                        status=(
+                            TransactionStatus.PENDING
+                        ),
+                        payment_gateway=(
+                            PaymentGateway.RAZORPAY
+                        ),
+                        amount=plan.amount,
+                        currency=plan.currency,
+                        gateway_subscription_id=(
+                            razorpay_subscription_id
+                        ),
+                        response=razorpay_response,
+                    )
                 )
 
-                payment = SubscriptionPayment.objects.create(
-                    subscription=subscription,
-                    razorpay_subscription_id=razorpay_subscription_id,
-                    amount=plan.amount,
-                    status=PaymentStatus.INITIATED,
-                    response=razorpay_response,
+                payment = (
+                    SubscriptionPayment.objects.create(
+                        subscription=subscription,
+                        razorpay_subscription_id=(
+                            razorpay_subscription_id
+                        ),
+                        amount=plan.amount,
+                        status=PaymentStatus.INITIATED,
+                        response=razorpay_response,
+                    )
                 )
+
+            # -----------------------------------------------------
+            # Response
+            # -----------------------------------------------------
 
             return CustomResponse().successResponse(
                 data={
@@ -159,71 +196,22 @@ class SubscriptionPaymentAPIView(APIView):
                     ),
                     "plan_name": plan.name,
                     "checkout_data": razorpay_response,
-                    "transaction_id": str(transaction_obj.id),
+                    "transaction_id": str(
+                        transaction_obj.id
+                    ),
                 },
                 description=(
                     "Subscription payment initiated successfully."
-                )
+                ),
             )
-
 
         except Exception as exc:
 
             traceback.print_exc()
 
-            if payment:
-                payment.status = PaymentStatus.FAILED
-
-                payment.failure_reason = str(exc)
-
-                payment.save(
-
-                    update_fields=[
-
-                        "status",
-
-                        "failure_reason",
-
-                    ]
-
-                )
-
-            if transaction_obj:
-                transaction_obj.status = TransactionStatus.FAILED
-
-                transaction_obj.failure_reason = str(exc)
-
-                transaction_obj.save(
-
-                    update_fields=[
-
-                        "status",
-
-                        "failure_reason",
-
-                    ]
-
-                )
-
-            if subscription:
-                subscription.status = SubscriptionStatus.FAILED
-
-                subscription.save(
-
-                    update_fields=[
-
-                        "status",
-
-                    ]
-
-                )
-
             return CustomResponse().errorResponse(
-
                 data={},
-
-                description=str(exc)
-
+                description=str(exc),
             )
 
 
