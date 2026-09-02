@@ -1,5 +1,6 @@
 import traceback
 import uuid
+from decimal import Decimal
 from django.conf import settings
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
