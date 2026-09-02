@@ -5,6 +5,9 @@ from django.db import models
 from db.models import AuditModel, Organization, OrganizationSubscription
 
 
+def generate_transaction_id():
+    return f"TXN_{uuid.uuid4().hex[:20].upper()}"
+
 class TransactionType(models.TextChoices):
     SUBSCRIPTION = "SUBSCRIPTION", "Subscription"
     SMS = "SMS", "SMS"
@@ -32,8 +35,10 @@ class Transaction(AuditModel):
     )
 
     transaction_id = models.CharField(
-        max_length=50,
+        max_length=30,
         unique=True,
+        editable=False,
+        default=generate_transaction_id,
         db_index=True,
     )
 
