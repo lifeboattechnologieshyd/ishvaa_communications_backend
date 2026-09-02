@@ -1,6 +1,6 @@
 from django.urls import path
 
-from user.subscription import SubscriptionPaymentAPIView, PhonePeWebhookAPIView, RazorpayWebhookAPIView, \
+from user.subscription import SubscriptionPaymentAPIView, RazorpayWebhookAPIView, \
     SubscriptionPlanView, VerifySubscriptionPaymentAPIView
 from user.support import CreateSupportTicketAPIView, SupportTicketDetailAPIView, SendSupportMessageAPIView, \
     SubmitSupportTicketRatingAPIView
@@ -18,7 +18,6 @@ urlpatterns = [
 
     path("create/payment",SubscriptionPaymentAPIView.as_view()),
     path("subscription/verify",VerifySubscriptionPaymentAPIView.as_view(),),
-    path("webhook",PhonePeWebhookAPIView.as_view()),
     path("callback",RazorpayWebhookAPIView.as_view()),
 
     path("plans",SubscriptionPlanView.as_view()),

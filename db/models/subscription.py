@@ -46,7 +46,7 @@ class SubscriptionPlan(AuditModel):
         choices=BillingCycle.choices,
     )
 
-    # Limits
+
     emails_per_month = models.PositiveIntegerField(
         default=0,
     )
@@ -59,7 +59,7 @@ class SubscriptionPlan(AuditModel):
         default=0,
     )
 
-    # Features
+
     analytics_level = models.CharField(
         max_length=20,
         choices=AnalyticsLevel.choices,
@@ -199,7 +199,7 @@ class SubscriptionPayment(AuditModel):
 
     subscription = models.ForeignKey(
         OrganizationSubscription,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="payments"
     )
 
