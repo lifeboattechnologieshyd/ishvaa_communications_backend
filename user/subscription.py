@@ -1017,6 +1017,14 @@ class RazorpayWebhookAPIView(APIView):
                     currency,
                 )
 
+                gateway_order_id = payment_entity.get("order_id")
+                gateway_invoice_id = payment_entity.get("invoice_id")
+
+                print("Gateway Order ID:", gateway_order_id)
+                print("Gateway Payment ID:", razorpay_payment_id)
+                print("Gateway Subscription ID:", razorpay_subscription_id)
+                print("Gateway Invoice ID:", gateway_invoice_id)
+
                 # -------------------------------------------------
                 # CREATE TRANSACTION
                 # -------------------------------------------------
@@ -1048,6 +1056,9 @@ class RazorpayWebhookAPIView(APIView):
                         gateway_subscription_id=(
                             razorpay_subscription_id
                         ),
+                        gateway_order_id=gateway_order_id,
+                        gateway_invoice_id=gateway_invoice_id,
+
                         payment_date=timezone.now(),
                         response=payload,
                     )
