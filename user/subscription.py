@@ -112,9 +112,7 @@ class SubscriptionPaymentAPIView(APIView):
 
             razorpay_response = create_razorpay_subscription(
                 plan_id=plan.razorpay_plan_id,
-                organization_name=organization.name,
-                email=organization.email,
-                phone=organization.phone,
+                organization=organization,
             )
 
             print(

@@ -51,6 +51,12 @@ class Organization(AuditModel):
         default=OrganizationStatus.ACTIVE,
         db_index=True,
     )
+    razorpay_customer_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        db_index=True,
+    )
     class Meta:
         db_table = "organizations"
         verbose_name = "Organization"

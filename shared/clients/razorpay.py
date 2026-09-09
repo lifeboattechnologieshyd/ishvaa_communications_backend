@@ -48,32 +48,39 @@ def create_plan(
 #     })
 
 
-def create_razorpay_subscription(
-    plan_id,
-    organization_name,
-    email,
-    phone=None,
-):
+def create_razorpay_subscription(plan_id, organization):
+
     client = get_razorpay_client()
 
-    customer = client.customer.create({
-        "name": organization_name,
-        "email": email,
-        "contact": phone,
-    })
+    # Reuse existing customer if available
+    if organization.razorpay_customer_id:
+
+        customer_id = organization.razorpay_customer_id
+
+    else:
+
+        customer = client.customer.create({
+            "name": organization.name,
+            "email": organization.email,
+            "contact": organization.phone,
+        })
+
+        customer_id = customer["id"]
+
+        organization.razorpay_customer_id = customer_id
+        organization.save(
+            update_fields=[
+                "razorpay_customer_id",
+            ]
+        )
 
     subscription = client.subscription.create({
         "plan_id": plan_id,
         "customer_notify": 1,
         "total_count": 120,
-        "customer_id": customer["id"],
     })
 
-    subscription["customer_id"] = customer["id"]
-
     return subscription
-
-
 def get_subscription(
     subscription_id,
 ):
