@@ -48,39 +48,49 @@ def create_plan(
 #     })
 
 
-def create_razorpay_subscription(plan_id, organization):
+from razorpay.errors import BadRequestError
 
+
+def get_or_create_customer(organization):
     client = get_razorpay_client()
 
-    # Reuse existing customer if available
+    # Already linked
     if organization.razorpay_customer_id:
+        return organization.razorpay_customer_id
 
-        customer_id = organization.razorpay_customer_id
-
-    else:
-
+    try:
         customer = client.customer.create({
             "name": organization.name,
             "email": organization.email,
             "contact": organization.phone,
         })
 
-        customer_id = customer["id"]
+        organization.razorpay_customer_id = customer["id"]
+        organization.save(update_fields=["razorpay_customer_id"])
 
-        organization.razorpay_customer_id = customer_id
-        organization.save(
-            update_fields=[
-                "razorpay_customer_id",
-            ]
-        )
+        return customer["id"]
 
-    subscription = client.subscription.create({
-        "plan_id": plan_id,
-        "customer_notify": 1,
-        "total_count": 120,
-    })
+    except BadRequestError as exc:
 
-    return subscription
+        print(exc)
+
+        # Customer already exists
+        if "Customer already exists" in str(exc):
+
+            customers = client.customer.all({
+                "count": 100
+            })
+
+            for customer in customers["items"]:
+                if customer["email"].lower() == organization.email.lower():
+
+                    organization.razorpay_customer_id = customer["id"]
+                    organization.save(update_fields=["razorpay_customer_id"])
+
+                    return customer["id"]
+
+        raise
+
 def get_subscription(
     subscription_id,
 ):
