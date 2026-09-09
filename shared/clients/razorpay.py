@@ -76,6 +76,9 @@ def get_or_create_customer(organization):
         return organization.razorpay_customer_id
 
     try:
+        print("Customer ID:", organization.razorpay_customer_id)
+        print("Customer Name:", organization.name)
+        print("Customer Email:", organization.email)
 
         customer = client.customer.create({
             "name": organization.name,
