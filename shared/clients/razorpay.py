@@ -5,6 +5,9 @@ from django.conf import settings
 import hmac
 import hashlib
 
+from razorpay.errors import BadRequestError
+
+
 def get_razorpay_client():
     print("RAZORPAY_KEY_ID:", getattr(settings, "RAZORPAY_KEY_ID", None))
     print("RAZORPAY_KEY_SECRET:", getattr(settings, "RAZORPAY_KEY_SECRET", None))
@@ -48,17 +51,32 @@ def create_plan(
 #     })
 
 
-from razorpay.errors import BadRequestError
+def create_razorpay_subscription(plan_id, organization):
+
+    client = get_razorpay_client()
+
+    customer_id = get_or_create_customer(organization)
+
+    print("Customer ID:", customer_id)
+
+    subscription = client.subscription.create({
+        "plan_id": plan_id,
+        "customer_notify": 1,
+        "total_count": 120,
+    })
+
+    return subscription
+
 
 
 def get_or_create_customer(organization):
     client = get_razorpay_client()
 
-    # Already linked
     if organization.razorpay_customer_id:
         return organization.razorpay_customer_id
 
     try:
+
         customer = client.customer.create({
             "name": organization.name,
             "email": organization.email,
@@ -72,24 +90,32 @@ def get_or_create_customer(organization):
 
     except BadRequestError as exc:
 
-        print(exc)
-
-        # Customer already exists
         if "Customer already exists" in str(exc):
 
             customers = client.customer.all({
-                "count": 100
+                "count": 100,
             })
 
             for customer in customers["items"]:
-                if customer["email"].lower() == organization.email.lower():
+
+                if (
+                    customer.get("email", "").lower()
+                    == organization.email.lower()
+                ):
 
                     organization.razorpay_customer_id = customer["id"]
-                    organization.save(update_fields=["razorpay_customer_id"])
+                    organization.save(
+                        update_fields=["razorpay_customer_id"]
+                    )
 
                     return customer["id"]
 
         raise
+
+
+
+
+
 
 def get_subscription(
     subscription_id,
